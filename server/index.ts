@@ -72,7 +72,8 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Serve Vite build in production
-const distPath = path.resolve(__dirname, '../dist');
+const distPath = path.resolve(process.cwd(), 'dist');
+console.log('Serving static from:', distPath);
 app.use(express.static(distPath));
 app.get('/{*splat}', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
