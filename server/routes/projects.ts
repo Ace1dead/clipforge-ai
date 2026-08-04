@@ -10,7 +10,8 @@ router.get('/', requireAuth, (req: AuthRequest, res) => {
 });
 
 router.get('/:id', requireAuth, (req: AuthRequest, res) => {
-  const project = findById(req.params.id);
+  const id = req.params.id as string;
+  const project = findById(id);
   if (!project || project.user_id !== req.user!.id) {
     res.status(404).json({ error: 'Project not found' });
     return;
@@ -29,22 +30,24 @@ router.post('/', requireAuth, (req: AuthRequest, res) => {
 });
 
 router.put('/:id', requireAuth, (req: AuthRequest, res) => {
-  const project = findById(req.params.id);
+  const id = req.params.id as string;
+  const project = findById(id);
   if (!project || project.user_id !== req.user!.id) {
     res.status(404).json({ error: 'Project not found' });
     return;
   }
-  const updated = updateProject(req.params.id, req.body.data || {});
+  const updated = updateProject(id, req.body.data || {});
   res.json({ project: updated });
 });
 
 router.delete('/:id', requireAuth, (req: AuthRequest, res) => {
-  const project = findById(req.params.id);
+  const id = req.params.id as string;
+  const project = findById(id);
   if (!project || project.user_id !== req.user!.id) {
     res.status(404).json({ error: 'Project not found' });
     return;
   }
-  deleteProject(req.params.id);
+  deleteProject(id);
   res.json({ ok: true });
 });
 

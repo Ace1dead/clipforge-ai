@@ -19,6 +19,10 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
+    // In production, allow the Render domain and any configured origins
+    if (process.env.NODE_ENV === 'production') {
+      return callback(null, true);
+    }
     if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       return callback(null, true);
     }

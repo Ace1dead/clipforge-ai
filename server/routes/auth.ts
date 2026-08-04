@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createUser, findByEmail, verifyPassword, toSafeUser, findById } from '../models/user.js';
-import { signAccessToken, signRefreshToken, verifyRefreshToken, requireAuth, type AuthRequest } from '../middleware/auth.js';
+import { signAccessToken, signRefreshToken, verifyAccessToken, verifyRefreshToken, requireAuth, type AuthRequest } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 
@@ -111,8 +111,9 @@ router.post('/admin-login', (req, res) => {
     user = { ...newUser, password_hash: '' } as any;
   }
   // Grant admin + pro
-  db.prepare('UPDATE users SET role = \'admin\', plan = \'pro\', credits = 999999, updated_at = datetime(\'now\') WHERE id = ?').run(user.id);
-  const freshUser = findById(user.id)!;
+  const userId = user!.id;
+  db.prepare('UPDATE users SET role = \'admin\', plan = \'pro\', credits = 999999, updated_at = datetime(\'now\') WHERE id = ?').run(userId);
+  const freshUser = findById(userId)!;
   const safeUser = toSafeUser(freshUser);
   const payload = { userId: freshUser.id, role: 'admin' as const };
   const accessToken = signAccessToken(payload);
