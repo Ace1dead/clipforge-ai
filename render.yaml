@@ -3,7 +3,7 @@ services:
     name: clipforge-ai
     runtime: node
     plan: free
-    buildCommand: npm install && npx tsc -p tsconfig.server.json && npx tsc -b && npx vite build
+    buildCommand: npm install && npx tsc -b && npx vite build && npx tsc -p tsconfig.server.json
     startCommand: node dist-server/index.js
     envVars:
       - key: NODE_ENV
