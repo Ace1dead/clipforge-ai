@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { initDb } from './db.js';
 import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
 import adminRoutes from './routes/admin.js';
@@ -77,7 +78,14 @@ app.get('/{*splat}', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`ClipForge API running on http://localhost:${PORT}`);
-  console.log(`Admin key: ${process.env.ADMIN_KEY ? 'configured' : 'NOT SET'}`);
+// Initialize database then start server
+initDb().then(() => {
+  console.log('Database initialized');
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`ClipForge API running on http://localhost:${PORT}`);
+    console.log(`Admin key: ${process.env.ADMIN_KEY ? 'configured' : 'NOT SET'}`);
+  });
+}).catch((err) => {
+  console.error('Database init failed:', err);
+  process.exit(1);
 });
