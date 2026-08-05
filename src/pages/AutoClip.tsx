@@ -1,7 +1,9 @@
 import { useRef, useState, useCallback } from 'react'
-import { Scissors, Sparkles, Download, Loader2, Zap, Clock, Hash, Eye, Link2, Upload, Play, Check, AlertCircle, ChevronDown, Film, Type, Layers, Wand2, Settings, Video, Music } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Scissors, Sparkles, Download, Loader2, Zap, Clock, Hash, Eye, Link2, Upload, Play, Check, AlertCircle, ChevronDown, Film, Type, Layers, Wand2, Settings, Video, Music, ArrowRight } from 'lucide-react'
 import { MediaDropzone } from '../components/MediaDropzone'
 import type { Picked } from '../components/MediaDropzone'
+import { ClipPreview } from '../components/ClipPreview'
 import { Button, Card, ProgressBar, Badge, toast, Input, Divider, Select } from '../components/ui'
 import { decodeAudio } from '../lib/audio'
 import { renderComposition } from '../lib/video'
@@ -31,6 +33,7 @@ function toTimedWords(words: WordTimestamp[]): TimedWord[] {
 }
 
 export function AutoClip() {
+  const navigate = useNavigate()
   const [step, setStep] = useState<Step>('url')
 
   const [urlInput, setUrlInput] = useState('')
@@ -133,8 +136,9 @@ export function AutoClip() {
     setStep('analyzing')
 
     let energyProfile: number[] = []
+    let audioBuffer: AudioBuffer | null = null
     try {
-      const audioBuffer = await decodeAudio(videoUrl)
+      audioBuffer = await decodeAudio(videoUrl)
       const rawEnergy = audioBuffer.getChannelData(0)
       const samplesPerSec = audioBuffer.sampleRate
       for (let i = 0; i < audioBuffer.duration; i++) {
@@ -143,6 +147,30 @@ export function AutoClip() {
         energyProfile.push(rms)
       }
     } catch { /* audio analysis optional */ }
+
+    // Auto-transcribe if supported
+    if (isSTTSupported() && audioBuffer) {
+      try {
+        const { encodeWav } = await import('../lib/wav')
+        const wavBlob = encodeWav(audioBuffer)
+        const transcript = await transcribeAudio(wavBlob, 'en-US')
+        if (transcript.words.length > 0) {
+          setWordTimestamps(transcript.words)
+          toast('info', `Transcribed ${transcript.words.length} words`)
+        }
+      } catch {
+        // STT failed, use estimateWordTimestamps as fallback
+      }
+    }
+
+    // Fallback: estimate word timestamps from duration
+    if (wordTimestamps.length === 0 && duration > 0) {
+      const estimated = await import('../lib/stt').then(m => m.estimateWordTimestamps(
+        'Auto-generated captions will appear here based on video timing',
+        duration
+      ))
+      setWordTimestamps(estimated)
+    }
 
     try {
       const videoAnalysis = await analyzeVideo({
@@ -261,6 +289,35 @@ export function AutoClip() {
       setStep('results')
     }
   }, [videoUrl, captionStyles, wordTimestamps])
+
+  const openInEditor = useCallback((clip: ClipResult) => {
+    if (!videoUrl) return
+    // Store clip data in localStorage for Editor to pick up
+    const editorData = {
+      videoUrl,
+      clip: {
+        id: clip.id,
+        title: clip.title,
+        start: clip.start,
+        end: clip.end,
+        platform: clip.platform,
+        hooks: clip.hooks,
+        hashtags: clip.hashtags,
+        captionStyle: clip.captionStyle,
+      },
+      analysis: analysis ? {
+        totalScore: analysis.totalScore,
+        hooks: analysis.hooks,
+        moments: analysis.moments,
+        suggestions: analysis.suggestions,
+      } : null,
+      wordTimestamps,
+      timestamp: Date.now(),
+    }
+    localStorage.setItem('clipforge_editor_import', JSON.stringify(editorData))
+    navigate('/editor')
+    toast('info', 'Clip imported to Editor — paste script to add captions')
+  }, [videoUrl, analysis, wordTimestamps, navigate])
 
   const resetToStart = useCallback(() => {
     setStep('url')
@@ -454,6 +511,28 @@ export function AutoClip() {
               </Button>
             </div>
 
+            {/* Clip Preview */}
+            {selectedClip && videoUrl && (
+              <ClipPreview
+                videoUrl={videoUrl}
+                start={selectedClip.start}
+                end={selectedClip.end}
+                title={selectedClip.title}
+                platform={selectedClip.platform}
+                hooks={selectedClip.hooks}
+                hasPrev={clips.indexOf(selectedClip) > 0}
+                hasNext={clips.indexOf(selectedClip) < clips.length - 1}
+                onPrev={() => {
+                  const idx = clips.indexOf(selectedClip)
+                  if (idx > 0) setSelectedClipId(clips[idx - 1].id)
+                }}
+                onNext={() => {
+                  const idx = clips.indexOf(selectedClip)
+                  if (idx < clips.length - 1) setSelectedClipId(clips[idx + 1].id)
+                }}
+              />
+            )}
+
             {clips.map((clip) => {
               const currentStyle = captionStyles[clip.id] || clip.captionStyle || 'pop-classic'
               return (
@@ -501,14 +580,24 @@ export function AutoClip() {
                       </div>
                     </div>
 
-                    <Button
-                      size="sm"
-                      icon={<Download size={14} />}
-                      loading={exportingClipId === clip.id}
-                      onClick={(e) => { e.stopPropagation(); exportClip(clip) }}
-                    >
-                      Export Premium
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={<ArrowRight size={14} />}
+                        onClick={(e) => { e.stopPropagation(); openInEditor(clip) }}
+                      >
+                        Open in Editor
+                      </Button>
+                      <Button
+                        size="sm"
+                        icon={<Download size={14} />}
+                        loading={exportingClipId === clip.id}
+                        onClick={(e) => { e.stopPropagation(); exportClip(clip) }}
+                      >
+                        Export
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )
