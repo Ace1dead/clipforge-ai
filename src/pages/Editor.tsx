@@ -9,6 +9,7 @@ import { Button, Card, Tabs, Textarea, Select, Field, Slider, ProgressBar, Badge
 import { MediaDropzone } from '../components/MediaDropzone'
 import type { Picked } from '../components/MediaDropzone'
 import { StylePicker } from '../components/StylePicker'
+import { VideoPreviewModal } from '../components/VideoPreviewModal'
 import { drawCaptions, getStyle } from '../lib/captions'
 import { estimateWordTiming, estimateSpeakingTime, STREAMELEMENTS_VOICES, synthesizeStreamElements } from '../lib/tts'
 import { renderComposition, videoMeta } from '../lib/video'
@@ -16,6 +17,9 @@ import { decodeAudio } from '../lib/audio'
 import { upsertProject, getProjects, deleteProject } from '../lib/store'
 import type { Project } from '../lib/store'
 import { fmtTime, downloadBlob, fmtBytes, uid } from '../lib/format'
+import { createDrawFrame } from '../lib/compositor'
+import type { CompositorConfig } from '../lib/compositor'
+import type { EditStyleId, ColorSkinId } from '../lib/editStyles'
 
 const SAMPLE_SCRIPT = 'This is how you go viral. Post daily. Study the trends. Never stop testing. And always — always — keep the captions popping.'
 
@@ -38,6 +42,9 @@ export function Editor() {
   const [time, setTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewEditStyle, setPreviewEditStyle] = useState<EditStyleId>('velocity')
+  const [previewColorSkin, setPreviewColorSkin] = useState<ColorSkinId>('candy')
   const [generatingVoice, setGeneratingVoice] = useState(false)
   const [progress, setProgress] = useState(0)
   const [res, setRes] = useState<Res>('9:16')
@@ -351,7 +358,7 @@ export function Editor() {
           <Button variant="ghost" size="sm" className={`text-[11px] ${res === '1:1' ? 'text-accent' : ''}`} onClick={() => setRes('1:1')}>Instagram</Button>
           <Button variant="ghost" size="sm" className={`text-[11px] ${res === '16:9' ? 'text-accent' : ''}`} onClick={() => setRes('16:9')}>YouTube</Button>
         </div>
-        <Button size="sm" icon={<Download size={14} />} loading={exporting} disabled={!project?.videoUrl} onClick={() => void exportVideo()}>Export</Button>
+        <Button size="sm" icon={<Download size={14} />} disabled={!project?.videoUrl} onClick={() => setPreviewOpen(true)}>Preview & Export</Button>
       </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[300px_1fr] min-h-0">
@@ -432,6 +439,28 @@ export function Editor() {
           <p className="text-[11px] text-faint mt-1.5">{Math.round(progress * 100)}% · {Math.round(duration)}s clip</p>
         </div>
       )}
+
+      {/* Preview Modal */}
+      <VideoPreviewModal
+        open={previewOpen}
+        videoUrl={project?.videoUrl || ''}
+        clipDuration={duration}
+        trimStart={trimStart}
+        trimEnd={trimEnd}
+        words={[]}
+        hooks={[]}
+        platform={res === '9:16' ? 'tiktok' : 'youtube'}
+        initialCaptionStyle={captionStyle}
+        initialEditStyle={previewEditStyle}
+        initialColorSkin={previewColorSkin}
+        onClose={() => setPreviewOpen(false)}
+        onExport={async (config) => {
+          await exportVideo()
+          setPreviewOpen(false)
+        }}
+        exporting={exporting}
+        exportProgress={progress}
+      />
     </div>
   )
 }

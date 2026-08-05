@@ -4,6 +4,8 @@ import { Scissors, Sparkles, Download, Loader2, Zap, Clock, Hash, Eye, Link2, Up
 import { MediaDropzone } from '../components/MediaDropzone'
 import type { Picked } from '../components/MediaDropzone'
 import { ClipPreview } from '../components/ClipPreview'
+import { VideoPreviewModal } from '../components/VideoPreviewModal'
+import type { CompositorConfig } from '../lib/compositor'
 import { Button, Card, ProgressBar, Badge, toast, Input, Divider, Select } from '../components/ui'
 import { decodeAudio, lufsNormalize, measureIntegratedLUFS } from '../lib/audio'
 import { renderComposition } from '../lib/video'
@@ -11,6 +13,8 @@ import { fmtTime, downloadBlob, fmtBytes } from '../lib/format'
 import { analyzeVideo, extractClips, type VideoAnalysis, type ClipResult } from '../lib/aiEngine'
 import { drawCaptions, getStyle, CAPTION_STYLES, type TimedWord } from '../lib/captions'
 import { transcribeAudio, type WordTimestamp, isSTTSupported } from '../lib/stt'
+import { createDrawFrame } from '../lib/compositor'
+import type { EditStyleId, ColorSkinId } from '../lib/editStyles'
 
 type Step = 'url' | 'analyzing' | 'results' | 'exporting'
 
@@ -51,6 +55,10 @@ export function AutoClip() {
   const [exportingClipId, setExportingClipId] = useState<string | null>(null)
   const [exportingAll, setExportingAll] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
+
+  const [previewClip, setPreviewClip] = useState<ClipResult | null>(null)
+  const [previewEditStyle, setPreviewEditStyle] = useState<EditStyleId>('velocity')
+  const [previewColorSkin, setPreviewColorSkin] = useState<ColorSkinId>('candy')
 
   const [captionStyles, setCaptionStyles] = useState<Record<string, string>>({})
   const [wordTimestamps, setWordTimestamps] = useState<WordTimestamp[]>([])
@@ -308,6 +316,37 @@ export function AutoClip() {
 
       const ext = finalBlob.type.includes('mp4') ? 'mp4' : 'webm'
       downloadBlob(finalBlob, `${clip.title.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`)
+      toast('success', `Exported: ${clip.title}`, fmtBytes(blob.size))
+    } catch (e) {
+      toast('error', 'Export failed', e instanceof Error ? e.message : undefined)
+    } finally {
+      setExportingClipId(null)
+      setStep('results')
+    }
+  }, [videoUrl, captionStyles, wordTimestamps])
+
+  const exportClipWithConfig = useCallback(async (clip: ClipResult, config: CompositorConfig) => {
+    if (!videoUrl) return
+    setExportingClipId(clip.id)
+    setExportProgress(0)
+    setStep('exporting')
+
+    try {
+      const captionStyleId = captionStyles[clip.id] || clip.captionStyle || 'pop-classic'
+      const timedWords = toTimedWords(wordTimestamps)
+      const blob = await renderComposition({
+        sources: [{ url: videoUrl, fit: 'cover' }],
+        outW: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1080 : 1920,
+        outH: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1920 : 1080,
+        trim: { start: clip.start, end: clip.end },
+        effects: config.editStyle,
+        captions: timedWords.map((w) => ({ text: w.text, start: w.start, end: w.end })),
+        captionStyle: captionStyleId,
+        onProgress: (p) => setExportProgress(p),
+      })
+
+      const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
+      downloadBlob(blob, `${clip.title.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`)
       toast('success', `Exported: ${clip.title}`, fmtBytes(blob.size))
     } catch (e) {
       toast('error', 'Export failed', e instanceof Error ? e.message : undefined)
@@ -666,11 +705,10 @@ export function AutoClip() {
                       </Button>
                       <Button
                         size="sm"
-                        icon={<Download size={14} />}
-                        loading={exportingClipId === clip.id}
-                        onClick={(e) => { e.stopPropagation(); exportClip(clip) }}
+                        icon={<Eye size={14} />}
+                        onClick={(e) => { e.stopPropagation(); setPreviewClip(clip) }}
                       >
-                        Export
+                        Preview & Export
                       </Button>
                     </div>
                   </div>
@@ -803,6 +841,29 @@ export function AutoClip() {
           </div>
         </div>
       )}
+
+      {/* Preview Modal */}
+      <VideoPreviewModal
+        open={!!previewClip}
+        videoUrl={videoUrl || ''}
+        clipDuration={previewClip ? previewClip.end - previewClip.start : 0}
+        trimStart={0}
+        trimEnd={previewClip ? previewClip.end - previewClip.start : undefined}
+        words={toTimedWords(wordTimestamps)}
+        hooks={previewClip?.hooks}
+        platform={previewClip?.platform}
+        initialCaptionStyle={previewClip ? (captionStyles[previewClip.id] || previewClip.captionStyle || 'pop-classic') : 'pop-classic'}
+        initialEditStyle={previewEditStyle}
+        initialColorSkin={previewColorSkin}
+        onClose={() => setPreviewClip(null)}
+        onExport={async (config) => {
+          if (!previewClip || !videoUrl) return
+          await exportClipWithConfig(previewClip, config)
+          setPreviewClip(null)
+        }}
+        exporting={exportingClipId === previewClip?.id}
+        exportProgress={exportProgress}
+      />
     </div>
   )
 }

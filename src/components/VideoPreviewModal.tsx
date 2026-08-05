@@ -1,0 +1,272 @@
+/**
+ * VideoPreviewModal — Full-screen preview of video with all overlays before export.
+ * Shows: video + captions + effects + hook text + platform badge + fade.
+ * User can adjust settings and then confirm export.
+ */
+
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX } from 'lucide-react'
+import { Button, Select, Field, Slider, Badge, ProgressBar, toast } from './ui'
+import { createDrawFrame, renderPreviewFrame, type CompositorConfig } from '../lib/compositor'
+import { EDIT_STYLES, type EditStyleId, type ColorSkinId } from '../lib/editStyles'
+import { COLOR_SKINS } from '../lib/effects'
+import { CAPTION_STYLES } from '../lib/captions'
+import { fmtTime } from '../lib/format'
+import type { TimedWord } from '../lib/tts'
+
+interface Props {
+  open: boolean
+  videoUrl: string
+  clipDuration: number
+  trimStart?: number
+  trimEnd?: number
+  words?: TimedWord[]
+  hooks?: string[]
+  platform?: string
+  initialCaptionStyle?: string
+  initialEditStyle?: EditStyleId
+  initialColorSkin?: ColorSkinId
+  onClose: () => void
+  onExport: (config: CompositorConfig) => void
+  exporting?: boolean
+  exportProgress?: number
+}
+
+export function VideoPreviewModal({
+  open,
+  videoUrl,
+  clipDuration,
+  trimStart = 0,
+  trimEnd,
+  words = [],
+  hooks = [],
+  platform,
+  initialCaptionStyle = 'pop-classic',
+  initialEditStyle = 'velocity',
+  initialColorSkin = 'candy',
+  onClose,
+  onExport,
+  exporting = false,
+  exportProgress = 0,
+}: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const rafRef = useRef(0)
+
+  const [playing, setPlaying] = useState(false)
+  const [time, setTime] = useState(0)
+  const [muted, setMuted] = useState(false)
+  const [captionStyle, setCaptionStyle] = useState(initialCaptionStyle)
+  const [editStyle, setEditStyle] = useState<EditStyleId>(initialEditStyle)
+  const [colorSkin, setColorSkin] = useState<ColorSkinId>(initialColorSkin)
+
+  const duration = (trimEnd ?? clipDuration) - trimStart
+  const outW = platform === 'tiktok' || platform === 'reels' || platform === 'shorts' ? 1080 : 1920
+  const outH = platform === 'tiktok' || platform === 'reels' || platform === 'shorts' ? 1920 : 1080
+
+  // Build compositor config
+  const compositorConfig: CompositorConfig = {
+    clipDuration: duration,
+    words,
+    captionStyleId: captionStyle,
+    editStyle,
+    colorSkin,
+    hooks,
+    platform,
+    fadeDuration: 0.5,
+    hookDuration: 3,
+  }
+
+  // Create draw function
+  const drawFrame = useCallback(() => {
+    return createDrawFrame(compositorConfig)
+  }, [captionStyle, editStyle, colorSkin, duration, words, hooks, platform])
+
+  // Canvas resize
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (canvas) {
+      canvas.width = outW
+      canvas.height = outH
+    }
+  }, [outW, outH])
+
+  // Draw loop
+  useEffect(() => {
+    if (!open) return
+
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const drawFn = createDrawFrame(compositorConfig)
+
+    const tick = () => {
+      const t = video.currentTime - trimStart
+      if (t >= 0 && t <= duration) {
+        renderPreviewFrame(ctx, video, t, canvas.width, canvas.height, drawFn)
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [open, compositorConfig, trimStart, duration])
+
+  // Video playback sync
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !open) return
+
+    if (playing) {
+      video.currentTime = trimStart + time
+      video.play().catch(() => setPlaying(false))
+    } else {
+      video.pause()
+    }
+  }, [playing, open])
+
+  // Time update
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !open) return
+
+    const onTime = () => {
+      const t = video.currentTime - trimStart
+      if (t >= duration) {
+        video.pause()
+        setPlaying(false)
+        setTime(duration)
+      } else if (t >= 0) {
+        setTime(t)
+      }
+    }
+
+    video.addEventListener('timeupdate', onTime)
+    return () => video.removeEventListener('timeupdate', onTime)
+  }, [open, trimStart, duration])
+
+  // Load video
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !open) return
+    video.src = videoUrl
+    video.load()
+  }, [videoUrl, open])
+
+  const seek = (t: number) => {
+    const video = videoRef.current
+    if (!video) return
+    const clamped = Math.max(0, Math.min(duration, t))
+    video.currentTime = trimStart + clamped
+    setTime(clamped)
+  }
+
+  const stepFrame = (dir: number) => {
+    seek(time + dir / 30)
+  }
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
+      {/* Close button */}
+      <button onClick={onClose} className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer">
+        <X size={20} />
+      </button>
+
+      <div className="flex flex-col lg:flex-row gap-4 max-w-[95vw] max-h-[95vh]">
+        {/* Video preview */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative bg-black rounded-xl overflow-hidden" style={{ maxHeight: '75vh' }}>
+            <video ref={videoRef} muted={muted} className="hidden" preload="auto" />
+            <canvas
+              ref={canvasRef}
+              className="max-h-[75vh] w-auto rounded-xl"
+              style={{ aspectRatio: `${outW}/${outH}` }}
+            />
+          </div>
+
+          {/* Playback controls */}
+          <div className="flex items-center gap-3 bg-elevated/80 backdrop-blur rounded-xl px-4 py-2">
+            <button onClick={() => stepFrame(-1)} className="p-1 text-faint hover:text-fg cursor-pointer">
+              <SkipBack size={16} />
+            </button>
+            <button onClick={() => setPlaying(!playing)} className="p-1.5 rounded-full bg-accent text-white cursor-pointer">
+              {playing ? <Pause size={16} /> : <Play size={16} />}
+            </button>
+            <button onClick={() => stepFrame(1)} className="p-1 text-faint hover:text-fg cursor-pointer">
+              <SkipForward size={16} />
+            </button>
+
+            {/* Timeline */}
+            <div className="flex-1 min-w-[200px]">
+              <input
+                type="range"
+                min={0}
+                max={duration * 100}
+                value={time * 100}
+                onChange={(e) => seek(Number(e.target.value) / 100)}
+                className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-accent"
+              />
+            </div>
+
+            <span className="text-[11px] text-faint font-mono min-w-[80px] text-right">
+              {fmtTime(time)} / {fmtTime(duration)}
+            </span>
+
+            <button onClick={() => setMuted(!muted)} className="p-1 text-faint hover:text-fg cursor-pointer">
+              {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Settings sidebar */}
+        <div className="w-72 bg-elevated/80 backdrop-blur rounded-xl p-4 flex flex-col gap-4 overflow-y-auto max-h-[80vh]">
+          <h3 className="font-semibold text-[14px]">Preview Settings</h3>
+
+          <Field label="Caption Style">
+            <Select value={captionStyle} onChange={(e) => setCaptionStyle(e.target.value)}>
+              {CAPTION_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="Edit Style">
+            <Select value={editStyle} onChange={(e) => setEditStyle(e.target.value as EditStyleId)}>
+              {Object.values(EDIT_STYLES).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="Color Skin">
+            <Select value={colorSkin} onChange={(e) => setColorSkin(e.target.value as ColorSkinId)}>
+              {Object.entries(COLOR_SKINS).map(([id, skin]) => (
+                <option key={id} value={id}>{id.charAt(0).toUpperCase() + id.slice(1)}</option>
+              ))}
+            </Select>
+          </Field>
+
+          <div className="border-t border-white/10 pt-3 mt-auto">
+            <Button
+              className="w-full"
+              size="lg"
+              icon={exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              loading={exporting}
+              disabled={exporting}
+              onClick={() => onExport(compositorConfig)}
+            >
+              {exporting ? `Exporting ${Math.round(exportProgress * 100)}%...` : 'Export Video'}
+            </Button>
+            {exporting && <ProgressBar value={exportProgress} className="mt-2" />}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
