@@ -56,6 +56,10 @@ export function AutoClip() {
 
   const selectedClip = clips.find(c => c.id === selectedClipId) ?? null
 
+  const isYouTubeUrl = (url: string): boolean => {
+    return /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)/i.test(url)
+  }
+
   const handleUrlDownload = useCallback(async () => {
     const url = urlInput.trim()
     if (!url) { toast('error', 'Please enter a URL'); return }
@@ -67,8 +71,18 @@ export function AutoClip() {
     abortRef.current = new AbortController()
 
     try {
-      const res = await fetch('/api/proxy/media?url=' + encodeURIComponent(url), { signal: abortRef.current.signal })
-      if (!res.ok) throw new Error(`Download failed (${res.status})`)
+      const isYT = isYouTubeUrl(url)
+      const endpoint = isYT
+        ? '/api/proxy/youtube?url=' + encodeURIComponent(url)
+        : '/api/proxy/media?url=' + encodeURIComponent(url)
+
+      toast('info', isYT ? 'Downloading from YouTube...' : 'Downloading video...')
+
+      const res = await fetch(endpoint, { signal: abortRef.current.signal })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: `Download failed (${res.status})` }))
+        throw new Error(errData.error || `Download failed (${res.status})`)
+      }
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       setVideoUrl(blobUrl)

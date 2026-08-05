@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { URL } from 'url';
+import ytdl from '@distube/ytdl-core';
 
 const router = Router();
 
@@ -53,6 +54,75 @@ router.get('/media', async (req, res) => {
     res.send(Buffer.from(buffer));
   } catch (e) {
     res.status(500).json({ error: 'Proxy error' });
+  }
+});
+
+// YouTube video download endpoint
+router.get('/youtube', async (req, res) => {
+  const { url } = req.query;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Missing url parameter' });
+    return;
+  }
+
+  // Validate YouTube URL
+  if (!ytdl.validateURL(url)) {
+    res.status(400).json({ error: 'Invalid YouTube URL' });
+    return;
+  }
+
+  try {
+    const info = await ytdl.getInfo(url);
+    const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
+
+    res.setHeader('Content-Type', format.mimeType || 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="${info.videoDetails.title.replace(/[^a-zA-Z0-9]/g, '_')}.mp4"`);
+    res.setHeader('Content-Length', format.contentLength || '0');
+
+    const stream = ytdl.downloadFromInfo(info, { format });
+    stream.pipe(res);
+
+    stream.on('error', (err) => {
+      console.error('YouTube stream error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Download failed' });
+      }
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('YouTube download error:', msg);
+    if (!res.headersSent) {
+      res.status(500).json({ error: `YouTube download failed: ${msg.slice(0, 200)}` });
+    }
+  }
+});
+
+// YouTube video info endpoint
+router.get('/youtube/info', async (req, res) => {
+  const { url } = req.query;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Missing url parameter' });
+    return;
+  }
+
+  if (!ytdl.validateURL(url)) {
+    res.status(400).json({ error: 'Invalid YouTube URL' });
+    return;
+  }
+
+  try {
+    const info = await ytdl.getInfo(url);
+    const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
+    res.json({
+      title: info.videoDetails.title,
+      duration: parseInt(info.videoDetails.lengthSeconds),
+      thumbnail: info.videoDetails.thumbnails.pop()?.url,
+      format: format.qualityLabel,
+      mimeType: format.mimeType,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: `Failed to get video info: ${msg.slice(0, 200)}` });
   }
 });
 
