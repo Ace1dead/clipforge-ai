@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { ToolLayout } from './components/Layout'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { Landing } from './pages/Landing'
 import { Login } from './pages/Login'
 import { NotFound } from './pages/NotFound'
@@ -54,11 +55,11 @@ function App() {
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/editor" element={<Editor />} />
-        <Route path="/editor/:id" element={<Editor />} />
+        <Route path="/editor" element={<ErrorBoundary><Editor /></ErrorBoundary>} />
+        <Route path="/editor/:id" element={<ErrorBoundary><Editor /></ErrorBoundary>} />
         <Route path="/calculators" element={<ToolLayout active="calculators"><Calculators /></ToolLayout>} />
         <Route path="/ai-settings" element={<ToolLayout active="ai-settings"><AISettings /></ToolLayout>} />
-        <Route path="/tools/auto-clip" element={<ToolLayout active="auto-clip"><AutoClip /></ToolLayout>} />
+        <Route path="/tools/auto-clip" element={<ToolLayout active="auto-clip"><ErrorBoundary><AutoClip /></ErrorBoundary></ToolLayout>} />
         <Route path="/tools/split-screen" element={<ToolLayout active="split-screen"><SplitScreen /></ToolLayout>} />
         <Route path="/tools/reddit-story" element={<ToolLayout active="reddit-story"><RedditStory /></ToolLayout>} />
         <Route path="/tools/fake-text" element={<ToolLayout active="fake-text"><FakeText /></ToolLayout>} />
@@ -79,8 +80,8 @@ function App() {
         <Route path="/tools/brainstorm" element={<ToolLayout active="brainstorm"><Brainstorm /></ToolLayout>} />
         <Route path="/tools/viral-scanner" element={<ToolLayout active="viral-scanner"><ViralScanner /></ToolLayout>} />
         <Route path="/tools/stock-media" element={<ToolLayout active="stock-media"><StockMedia /></ToolLayout>} />
-        <Route path="/tools/batch" element={<ToolLayout active="batch"><BatchProcessor /></ToolLayout>} />
-        <Route path="/tools/templates" element={<ToolLayout active="templates"><Templates /></ToolLayout>} />
+        <Route path="/tools/batch" element={<ToolLayout active="batch"><ErrorBoundary><BatchProcessor /></ErrorBoundary></ToolLayout>} />
+        <Route path="/tools/templates" element={<ToolLayout active="templates"><ErrorBoundary><Templates /></ErrorBoundary></ToolLayout>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

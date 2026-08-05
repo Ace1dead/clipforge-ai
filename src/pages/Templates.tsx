@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Sparkles, Play, Download, Clock, Zap, Film, Type, Mic, Layers, Wand2 } from 'lucide-react'
 import { Button, Card, Badge, toast } from '../components/ui'
 
@@ -152,13 +153,29 @@ const TEMPLATES: Template[] = [
 const CATEGORIES = ['All', 'Short-Form', 'Educational', 'Marketing', 'Entertainment', 'Creative']
 
 export function Templates() {
+  const navigate = useNavigate()
   const [category, setCategory] = useState('All')
   const [selected, setSelected] = useState<Template | null>(null)
 
   const filtered = category === 'All' ? TEMPLATES : TEMPLATES.filter(t => t.category === category)
 
   const applyTemplate = (template: Template) => {
-    toast('info', `Template "${template.name}" — open Auto Clip or Editor to start creating`)
+    // Store template config in localStorage for Editor to pick up
+    const templateConfig = {
+      name: template.name,
+      category: template.category,
+      platforms: template.platforms,
+      features: template.features,
+      suggestedStyle: template.category === 'Short-Form' ? 'velocity'
+        : template.category === 'Educational' ? 'kinetic_typography'
+        : template.category === 'Creative' ? 'compositing'
+        : template.category === 'Entertainment' ? 'raw_impact'
+        : 'flow_match',
+      suggestedDuration: template.duration,
+    }
+    localStorage.setItem('cf_template_config', JSON.stringify(templateConfig))
+    toast('info', `Template "${template.name}" applied — upload a video in the Editor`)
+    navigate('/editor')
   }
 
   return (

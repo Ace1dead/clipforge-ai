@@ -1,13 +1,15 @@
 import { useState, useCallback, useRef } from 'react'
-import { Upload, Play, Pause, Trash2, Download, Loader2, Check, AlertCircle, Film, X } from 'lucide-react'
+import { Upload, Play, Pause, Trash2, Download, Loader2, Check, AlertCircle, Film, X, Wand2, Sparkles } from 'lucide-react'
 import { MediaDropzone } from '../components/MediaDropzone'
 import type { Picked } from '../components/MediaDropzone'
-import { Button, Card, ProgressBar, Badge, toast } from '../components/ui'
-import { decodeAudio } from '../lib/audio'
+import { Button, Card, ProgressBar, Badge, toast, Select } from '../components/ui'
+import { decodeAudio, detectBeats } from '../lib/audio'
 import { renderComposition } from '../lib/video'
 import { fmtTime, downloadBlob, fmtBytes } from '../lib/format'
 import { analyzeVideo, extractClips, type VideoAnalysis, type ClipResult } from '../lib/aiEngine'
 import { drawCaptions, getStyle, CAPTION_STYLES, type TimedWord } from '../lib/captions'
+import { EDIT_STYLES, type EditStyleId, type ColorSkinId } from '../lib/editStyles'
+import { composeEffects, screenShake, chromaticAberration, vignette, filmGrain, createEffectContext, COLOR_SKINS } from '../lib/effects'
 
 type JobStatus = 'queued' | 'analyzing' | 'clips' | 'exporting' | 'done' | 'error'
 
@@ -27,6 +29,8 @@ interface BatchJob {
 export function BatchProcessor() {
   const [jobs, setJobs] = useState<BatchJob[]>([])
   const [processing, setProcessing] = useState(false)
+  const [editStyle, setEditStyle] = useState<EditStyleId>('velocity')
+  const [colorSkin, setColorSkin] = useState<ColorSkinId>('candy')
   const abortRef = useRef<AbortController | null>(null)
 
   const addFiles = useCallback((picked: Picked) => {
@@ -74,9 +78,10 @@ export function BatchProcessor() {
         })
         updateJob(job.id, { duration })
 
-        // Step 2: AI analysis
+        // Step 2: AI analysis + beat detection
         updateJob(job.id, { progress: 0.3 })
         let energyProfile: number[] = []
+        let beatData: { bpm: number; beatTimes: number[]; confidence: number } | null = null
         try {
           const audioBuffer = await decodeAudio(job.url)
           const rawEnergy = audioBuffer.getChannelData(0)
@@ -86,6 +91,7 @@ export function BatchProcessor() {
             const rms = Math.sqrt(slice.reduce((s, v) => s + v * v, 0) / Math.max(slice.length, 1))
             energyProfile.push(rms)
           }
+          beatData = detectBeats(audioBuffer)
         } catch { /* audio optional */ }
 
         const analysis = await analyzeVideo({
@@ -113,24 +119,60 @@ export function BatchProcessor() {
           updateJob(job.id, { progress: 0.6 + (exported / topClips.length) * 0.4 })
 
           try {
+            const style = EDIT_STYLES[editStyle]
+            const skin = COLOR_SKINS[colorSkin]
+            const clipDuration = clip.end - clip.start
+
+            // Build effects pipeline
+            const effects = []
+            if (style.screenShake.enabled) effects.push(screenShake(style.screenShake.intensity, style.screenShake.frequency))
+            if (style.chromaticAberration.enabled) effects.push(chromaticAberration(style.chromaticAberration.offset))
+            if (style.vignette.enabled) effects.push(vignette(style.vignette.strength, style.vignette.radius))
+            if (style.filmGrain.enabled) effects.push(filmGrain(style.filmGrain.intensity))
+            const composedEffects = effects.length > 0 ? composeEffects(...effects) : null
+
             const blob = await renderComposition({
               sources: [{ url: job.url, fit: 'cover' }],
               outW: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1080 : 1920,
               outH: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1920 : 1080,
               trim: { start: clip.start, end: clip.end },
               draw: (ctx, time, w, h) => {
-                if (time < 0.5) {
-                  ctx.fillStyle = `rgba(0,0,0,${1 - time * 2})`
+                // Fade in/out
+                if (time < 0.5) { ctx.fillStyle = `rgba(0,0,0,${1 - time * 2})`; ctx.fillRect(0, 0, w, h) }
+                else if (time > clipDuration - 0.5) { ctx.fillStyle = `rgba(0,0,0,${(time - (clipDuration - 0.5)) * 2})`; ctx.fillRect(0, 0, w, h) }
+
+                // Apply edit style effects
+                if (composedEffects) {
+                  const ec = createEffectContext(ctx, time, w, h, 0, beatData?.bpm ?? 120)
+                  composedEffects(ec, () => {
+                    // Inner draw: gradient overlay
+                    const grad = ctx.createLinearGradient(0, 0, 0, h)
+                    grad.addColorStop(0, 'rgba(0,0,0,0.15)')
+                    grad.addColorStop(1, 'rgba(0,0,0,0.3)')
+                    ctx.fillStyle = grad
+                    ctx.fillRect(0, 0, w, h)
+                    // Color skin overlay
+                    if (skin) {
+                      ctx.globalAlpha = 0.08
+                      ctx.fillStyle = skin.shadows
+                      ctx.fillRect(0, 0, w, h)
+                      ctx.globalAlpha = 1
+                    }
+                  })
+                } else {
+                  // No effects - just draw directly
+                  const grad = ctx.createLinearGradient(0, 0, 0, h)
+                  grad.addColorStop(0, 'rgba(0,0,0,0.15)')
+                  grad.addColorStop(1, 'rgba(0,0,0,0.3)')
+                  ctx.fillStyle = grad
                   ctx.fillRect(0, 0, w, h)
-                } else if (time > (clip.end - clip.start) - 0.5) {
-                  ctx.fillStyle = `rgba(0,0,0,${(time - ((clip.end - clip.start) - 0.5)) * 2})`
-                  ctx.fillRect(0, 0, w, h)
+                  if (skin) {
+                    ctx.globalAlpha = 0.08
+                    ctx.fillStyle = skin.shadows
+                    ctx.fillRect(0, 0, w, h)
+                    ctx.globalAlpha = 1
+                  }
                 }
-                const grad = ctx.createLinearGradient(0, 0, 0, h)
-                grad.addColorStop(0, 'rgba(0,0,0,0.15)')
-                grad.addColorStop(1, 'rgba(0,0,0,0.3)')
-                ctx.fillStyle = grad
-                ctx.fillRect(0, 0, w, h)
               },
               muteVideoAudio: false,
             })
@@ -205,6 +247,25 @@ export function BatchProcessor() {
         <MediaDropzone onPicked={addFiles} height="h-28" />
         <p className="text-[11px] text-faint mt-2 text-center">Drop files to add to batch queue — all processing happens in your browser</p>
       </Card>
+
+      {/* Edit Style Selection */}
+      <div className="flex items-center gap-3 mt-4">
+        <div className="flex items-center gap-2">
+          <Wand2 size={14} className="text-accent" />
+          <span className="text-[12px] font-medium text-muted">Edit Style:</span>
+        </div>
+        <Select value={editStyle} onChange={e => setEditStyle(e.target.value as EditStyleId)}>
+          {Object.values(EDIT_STYLES).map(s => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </Select>
+        <span className="text-[12px] font-medium text-muted ml-2">Color:</span>
+        <Select value={colorSkin} onChange={e => setColorSkin(e.target.value as ColorSkinId)}>
+          {Object.entries(COLOR_SKINS).map(([id, s]) => (
+            <option key={id} value={id}>{s.name}</option>
+          ))}
+        </Select>
+      </div>
 
       {/* Queue Stats */}
       {jobs.length > 0 && (

@@ -61,6 +61,20 @@ export function Editor() {
     if (canvas) { canvas.width = outDims.w; canvas.height = outDims.h }
   }, [res])
 
+  // Read template config from Templates page
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('cf_template_config')
+      if (raw) {
+        const cfg = JSON.parse(raw)
+        localStorage.removeItem('cf_template_config')
+        if (cfg.name) {
+          toast('info', `Template loaded: ${cfg.name}`, 'Upload a video to start editing')
+        }
+      }
+    } catch { /* ignore */ }
+  }, [])
+
   const update = (patch: Partial<Project>) => setProject((p) => (p ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p))
 
   const generateScript = async () => {
