@@ -3,35 +3,10 @@ import { URL } from 'url';
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import https from 'https';
+import http from 'http';
 
 const router = Router();
-
-// Debug endpoint for yt-dlp status
-router.get('/yt-dlp-status', (_req, res) => {
-  const path = getYtDlpPath();
-  const info: any = { path, exists: !!path };
-
-  if (!path) {
-    res.json(info);
-    return;
-  }
-
-  const proc = spawn(path, ['--version'], { timeout: 10000 });
-  let stdout = '';
-  let stderr = '';
-  proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-  proc.on('close', (code) => {
-    info.version = stdout.trim();
-    info.exitCode = code;
-    info.stderr = stderr.slice(0, 200);
-    res.json(info);
-  });
-  proc.on('error', (e) => {
-    info.error = e.message;
-    res.json(info);
-  });
-});
 
 const BLOCKED_HOSTS = new Set([
   'localhost', '127.0.0.1', '0.0.0.0', '::1',
@@ -57,20 +32,109 @@ function isYouTubeUrl(url: string): boolean {
   return /(?:youtube\.com|youtu\.be|youtube\.com\/embed|youtube\.com\/shorts)/i.test(url);
 }
 
-function getYtDlpPath(): string | null {
-  const candidates = [
-    join(process.cwd(), 'yt-dlp'),
-    join(process.cwd(), 'node_modules', '.bin', 'yt-dlp'),
-    '/usr/local/bin/yt-dlp',
-    '/usr/bin/yt-dlp',
+function extractVideoId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
   ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
   }
   return null;
 }
 
-// YouTube video download via yt-dlp
+function httpGet(url: string, headers: Record<string, string> = {}): Promise<{ status: number; data: string; headers: Record<string, string> }> {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { headers }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return httpGet(res.headers.location, headers).then(resolve).catch(reject);
+      }
+      let data = '';
+      res.on('data', (c: Buffer) => { data += c.toString(); });
+      res.on('end', () => resolve({ status: res.statusCode || 0, data, headers: res.headers as Record<string, string> }));
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+function httpGetBinary(url: string, headers: Record<string, string> = {}): Promise<{ status: number; stream: import('stream').Readable; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { headers }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return httpGetBinary(res.headers.location, headers).then(resolve).catch(reject);
+      }
+      resolve({
+        status: res.statusCode || 0,
+        stream: res,
+        contentType: res.headers['content-type'] || 'video/mp4',
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(180000, () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+async function downloadYouTube(videoId: string): Promise<{ stream: import('stream').Readable; contentType: string }> {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cookie': 'CONSENT=YES+cb.20240101-00-p0.en+FX+999',
+  };
+
+  // Fetch watch page
+  const page = await httpGet(`https://www.youtube.com/watch?v=${videoId}`, headers);
+
+  // Extract ytInitialPlayerResponse
+  const match = page.data.match(/var ytInitialPlayerResponse\s*=\s*(\{.*?\});/s);
+  if (!match) throw new Error('Could not extract player response');
+
+  const playerResponse = JSON.parse(match[1]);
+  const streamingData = playerResponse.streamingData;
+  if (!streamingData) throw new Error('No streaming data found');
+
+  // Try formats first (muxed audio+video)
+  const formats = streamingData.formats || [];
+  const adaptive = streamingData.adaptiveFormats || [];
+
+  // Pick best muxed format (has both audio and video)
+  let chosen = formats.find((f: any) => f.qualityLabel && f.url);
+  if (!chosen) chosen = formats.find((f: any) => f.url);
+  // Fallback to adaptive video + audio
+  if (!chosen) {
+    const videoStream = adaptive.find((f: any) => f.mimeType?.startsWith('video/') && f.url && f.qualityLabel?.includes('720'));
+    if (videoStream) chosen = videoStream;
+  }
+  if (!chosen) {
+    chosen = adaptive.find((f: any) => f.mimeType?.startsWith('video/') && f.url);
+  }
+
+  if (!chosen) {
+    // All formats use signatureCipher — need decryption
+    // Try the android client approach
+    throw new Error('All video formats require signature decryption. Try uploading the file directly.');
+  }
+
+  if (chosen.signatureCipher) {
+    throw new Error('Video requires signature decryption. Try uploading the file directly.');
+  }
+
+  if (!chosen.url) {
+    throw new Error('No direct video URL available. Try uploading the file directly.');
+  }
+
+  // Fetch the actual video
+  const video = await httpGetBinary(chosen.url, {
+    'User-Agent': headers['User-Agent'],
+    'Referer': 'https://www.youtube.com/',
+  });
+
+  return { stream: video.stream, contentType: video.contentType || 'video/mp4' };
+}
+
+// YouTube video download
 router.get('/youtube', async (req, res) => {
   const { url } = req.query;
   if (!url || typeof url !== 'string') {
@@ -83,55 +147,25 @@ router.get('/youtube', async (req, res) => {
     return;
   }
 
-  const ytDlpPath = getYtDlpPath();
-  if (!ytDlpPath) {
-    res.status(500).json({ error: 'yt-dlp not installed on server' });
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    res.status(400).json({ error: 'Could not extract video ID' });
     return;
   }
 
   try {
-    res.setHeader('Content-Type', 'video/mp4');
-
-    // Stream video directly — use Node.js as JS runtime for YouTube signatures
-    const proc = spawn(ytDlpPath, [
-      '-f', 'best[height<=720]/best',
-      '--no-check-certificates',
-      '--no-warnings',
-      '--js-runtimes', 'node',
-      '--newline',
-      '-o', '-',  // output to stdout
-      url,
-    ], {
-      timeout: 180000,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-    });
-
-    proc.stdout.pipe(res);
-
-    let errorOutput = '';
-    proc.stderr.on('data', (d: Buffer) => { errorOutput += d.toString(); });
-
-    proc.on('error', (err) => {
-      console.error('yt-dlp spawn error:', err.message);
+    const { stream, contentType } = await downloadYouTube(videoId);
+    res.setHeader('Content-Type', contentType);
+    stream.pipe(res);
+    stream.on('error', (err) => {
+      console.error('YouTube stream error:', err.message);
       if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
       else res.end();
-    });
-
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        console.error('yt-dlp error:', errorOutput.slice(0, 300));
-        if (!res.headersSent) {
-          res.status(500).json({ error: `Download failed: ${errorOutput.slice(0, 200)}` });
-        }
-      }
-      res.end();
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('YouTube download error:', msg);
-    if (!res.headersSent) {
-      res.status(500).json({ error: `YouTube download failed: ${msg.slice(0, 200)}` });
-    }
+    res.status(500).json({ error: msg });
   }
 });
 
