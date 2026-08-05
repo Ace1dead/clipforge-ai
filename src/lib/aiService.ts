@@ -1,12 +1,13 @@
 /**
- * AI Service Layer
- * Fallback chain: Server proxy → Client providers → OmniRoute → Suggest install
+ * AI Service Layer — Client-side only.
+ * Users add their own API keys in AI Settings.
+ * Fallback: Client keys → OmniRoute → suggest install
  */
 
 export interface AIProvider {
   id: string;
   name: string;
-  type: 'omniroute' | 'openai' | 'anthropic' | 'custom';
+  type: 'omniroute' | 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'deepseek' | 'together' | 'cohere' | 'custom';
   baseUrl: string;
   apiKey?: string;
   model: string;
@@ -102,54 +103,41 @@ export function removeCustomProvider(providerId: string): void {
 }
 
 /**
- * Check if server has AI keys configured.
+ * Generate content using client-side providers.
+ * Fallback: providers with API keys → OmniRoute → error
  */
-export async function checkServerAIStatus(): Promise<{
-  configured: boolean;
-  providers: { openai: boolean; anthropic: boolean };
-}> {
-  try {
-    const res = await fetch('/api/ai/status', { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return { configured: false, providers: { openai: false, anthropic: false } };
-    return await res.json();
-  } catch {
-    return { configured: false, providers: { openai: false, anthropic: false } };
-  }
-}
+export async function generateAI(request: AIRequest): Promise<AIResponse> {
+  // 1. Try client-side providers with API keys (non-OmniRoute)
+  const enabledProviders = currentSettings.providers
+    .filter(p => p.enabled && p.apiKey && p.type !== 'omniroute')
+    .sort((a, b) => a.priority - b.priority);
 
-/**
- * Call the server-side AI proxy (uses env vars).
- */
-async function callServerProxy(request: AIRequest): Promise<AIResponse> {
-  const res = await fetch('/api/ai/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages: request.messages,
-      maxTokens: request.maxTokens ?? 1000,
-      temperature: request.temperature ?? 0.7,
-      provider: 'auto',
-    }),
-    signal: AbortSignal.timeout(60000),
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(data.error ?? `Server AI proxy error ${res.status}`);
+  for (const provider of enabledProviders) {
+    try {
+      return await callProvider(provider, request);
+    } catch (e) {
+      console.warn(`AI provider ${provider.name} failed:`, e instanceof Error ? e.message : e);
+    }
   }
 
-  const data = await res.json();
-  return {
-    content: data.content ?? '',
-    model: data.model ?? 'unknown',
-    provider: `Server ${data.provider}`,
-    tokensUsed: data.tokensUsed ?? 0,
-  };
+  // 2. Try OmniRoute (free, local)
+  if (currentSettings.useOmniRoute) {
+    try {
+      const omniProvider = currentSettings.providers.find(p => p.type === 'omniroute' && p.enabled);
+      if (omniProvider) {
+        return await callProvider(omniProvider, request);
+      }
+    } catch {
+      // OmniRoute unavailable
+    }
+  }
+
+  // 3. Nothing available
+  throw new Error(
+    'No AI configured. Go to AI Settings and add your API key (OpenAI, Anthropic, Google, Groq, etc.) or enable OmniRoute for free models.'
+  );
 }
 
-/**
- * Call a client-side provider directly.
- */
 async function callProvider(
   provider: AIProvider,
   request: AIRequest
@@ -163,21 +151,63 @@ async function callProvider(
   };
 
   if (provider.apiKey) {
-    headers['Authorization'] = `Bearer ${provider.apiKey}`;
+    // Anthropic uses x-api-key header
+    if (provider.type === 'anthropic') {
+      headers['x-api-key'] = provider.apiKey;
+      headers['anthropic-version'] = '2023-06-01';
+    } else {
+      headers['Authorization'] = `Bearer ${provider.apiKey}`;
+    }
   }
 
-  const body = {
-    model: provider.model,
-    messages: request.messages,
-    max_tokens: request.maxTokens ?? 1000,
-    temperature: request.temperature ?? 0.7,
-  };
+  let url = `${baseUrl}/chat/completions`;
+  let body: any;
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  if (provider.type === 'anthropic') {
+    // Anthropic uses different API format
+    url = `${baseUrl}/messages`;
+    const system = request.messages.find(m => m.role === 'system')?.content ?? '';
+    const msgs = request.messages.filter(m => m.role !== 'system');
+    body = {
+      model: provider.model,
+      max_tokens: request.maxTokens ?? 1000,
+      temperature: request.temperature ?? 0.7,
+      system,
+      messages: msgs.map(m => ({ role: m.role, content: m.content })),
+    };
+  } else if (provider.type === 'google') {
+    // Google uses different API format
+    url = `${baseUrl}/models/${provider.model}:generateContent`;
+    headers['x-goog-api-key'] = provider.apiKey ?? '';
+    delete headers['Authorization'];
+    const contents = request.messages.filter(m => m.role !== 'system').map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+    const systemMsg = request.messages.find(m => m.role === 'system')?.content;
+    body = {
+      contents,
+      generationConfig: {
+        maxOutputTokens: request.maxTokens ?? 1000,
+        temperature: request.temperature ?? 0.7,
+      },
+      ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg }] } } : {}),
+    };
+  } else {
+    // OpenAI-compatible (OpenAI, Groq, Mistral, DeepSeek, Together, Cohere, OmniRoute)
+    body = {
+      model: provider.model,
+      messages: request.messages,
+      max_tokens: request.maxTokens ?? 1000,
+      temperature: request.temperature ?? 0.7,
+    };
+  }
+
+  const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(60000),
   });
 
   if (!response.ok) {
@@ -187,61 +217,27 @@ async function callProvider(
 
   const data = await response.json();
 
+  // Extract content based on provider type
+  let content = '';
+  let model = provider.model;
+
+  if (provider.type === 'anthropic') {
+    content = data.content?.[0]?.text ?? '';
+    model = data.model ?? provider.model;
+  } else if (provider.type === 'google') {
+    content = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    model = data.modelVersion ?? provider.model;
+  } else {
+    content = data.choices?.[0]?.message?.content ?? '';
+    model = data.model ?? provider.model;
+  }
+
   return {
-    content: data.choices?.[0]?.message?.content ?? '',
-    model: data.model ?? provider.model,
+    content,
+    model,
     provider: provider.name,
     tokensUsed: data.usage?.total_tokens ?? 0,
   };
-}
-
-/**
- * Generate content using the best available AI.
- * Fallback chain: Server proxy → Client providers → OmniRoute → Error with suggestion
- */
-export async function generateAI(request: AIRequest): Promise<AIResponse> {
-  // 1. Try server proxy first (uses env vars, no user config needed)
-  try {
-    const serverStatus = await checkServerAIStatus();
-    if (serverStatus.configured) {
-      return await callServerProxy(request);
-    }
-  } catch {
-    // Server proxy unavailable, continue to client providers
-  }
-
-  // 2. Try client-side providers with API keys
-  const enabledProviders = currentSettings.providers
-    .filter(p => p.enabled && p.apiKey && p.type !== 'omniroute')
-    .sort((a, b) => a.priority - b.priority);
-
-  for (const provider of enabledProviders) {
-    try {
-      return await callProvider(provider, request);
-    } catch (e) {
-      console.warn(`AI provider ${provider.name} failed:`, e instanceof Error ? e.message : e);
-    }
-  }
-
-  // 3. Try OmniRoute (free, local)
-  if (currentSettings.useOmniRoute) {
-    try {
-      const omniProvider = currentSettings.providers.find(p => p.type === 'omniroute' && p.enabled);
-      if (omniProvider) {
-        return await callProvider(omniProvider, request);
-      }
-    } catch {
-      // OmniRoute unavailable
-    }
-  }
-
-  // 4. Nothing available — throw with suggestions
-  throw new Error(
-    'No AI available. Options:\n' +
-    '• Set OPENAI_API_KEY or ANTHROPIC_API_KEY on the server (Render dashboard → Environment)\n' +
-    '• Add your own API key in AI Settings\n' +
-    '• Install OmniRoute locally for free models: https://github.com/paradite/omniroute'
-  );
 }
 
 /**
@@ -269,6 +265,22 @@ export async function checkOmniRouteStatus(): Promise<{
     };
   } catch {
     return { available: false };
+  }
+}
+
+/**
+ * Check if server has AI keys (optional, for display only).
+ */
+export async function checkServerAIStatus(): Promise<{
+  configured: boolean;
+  providers: Record<string, boolean>;
+}> {
+  try {
+    const res = await fetch('/api/ai/status', { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return { configured: false, providers: {} };
+    return await res.json();
+  } catch {
+    return { configured: false, providers: {} };
   }
 }
 
