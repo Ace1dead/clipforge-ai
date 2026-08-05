@@ -5,7 +5,7 @@ import {
   Play, Pause, Upload, Captions, Mic, Palette, Clapperboard, Download, Save, SkipBack, SkipForward,
   Volume2, Type, Sparkles, Wand2, Loader2, ArrowLeft, X,
 } from 'lucide-react'
-import { Button, Card, Tabs, Textarea, Select, Field, Slider, Toggle, ProgressBar, Badge, toast } from '../components/ui'
+import { Button, Card, Tabs, Textarea, Select, Field, Slider, ProgressBar, Badge, toast } from '../components/ui'
 import { MediaDropzone } from '../components/MediaDropzone'
 import type { Picked } from '../components/MediaDropzone'
 import { StylePicker } from '../components/StylePicker'
@@ -322,9 +322,6 @@ export function Editor() {
                 <p className="text-[11px] text-faint">{project.voiceName} · captions re-timed to narration</p>
               </div>
             )}
-            <div className="pt-2 border-t border-white/8">
-              <Toggle checked={false} onChange={() => toast('info', 'Music library', 'Music requires a Pro plan — add your own track as the source video instead')} label="Background music library" />
-            </div>
           </div>
         )}
 

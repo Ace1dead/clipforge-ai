@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button, Card, Badge, EmptyState } from '../components/ui'
-import { getProjects, deleteProject } from '../lib/store'
+import { getProjects, deleteProject, syncFromServer } from '../lib/store'
 import { getApiUser } from '../lib/api'
 import { fmtTime } from '../lib/format'
 
@@ -53,6 +53,15 @@ export function Dashboard() {
   useEffect(() => {
     if (!user) navigate('/login')
   }, [user, navigate])
+
+  // Sync projects from server on mount
+  useEffect(() => {
+    if (user) {
+      syncFromServer().then(serverProjects => {
+        if (serverProjects.length > 0) setProjects(serverProjects)
+      })
+    }
+  }, [user])
 
   if (!user) return null
 

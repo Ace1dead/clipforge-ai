@@ -29,8 +29,8 @@ export function RedditStory() {
     setLoading(true)
     setPost(null)
     try {
-      // Try fetching from Reddit — may fail due to CORS/blocks
-      const res = await fetch(`https://www.reddit.com/r/${sub}/top.json?t=week&limit=25`)
+      // Use server proxy to avoid CORS/bot detection
+      const res = await fetch(`/api/proxy/reddit/r/${sub}/top?t=week&limit=25`)
       const text = await res.text()
       let json: any
       try { json = JSON.parse(text) } catch { throw new Error('parse') }
@@ -43,8 +43,8 @@ export function RedditStory() {
       setPost(p)
       setEditText(p.selftext)
     } catch {
-      // Reddit blocks automated access — provide manual paste fallback
-      toast('info', 'Reddit blocks automated fetching. Paste a story below or use a direct link.')
+      // Fallback: let user paste manually
+      toast('info', 'Could not fetch stories. Paste a story below or use a direct link.')
       setPost({ title: `r/${sub} story`, selftext: '', score: 0, subreddit: sub })
       setEditText('')
     } finally { setLoading(false) }
