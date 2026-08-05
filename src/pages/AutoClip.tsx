@@ -159,6 +159,7 @@ export function AutoClip() {
     } catch { /* audio analysis optional */ }
 
     // Auto-transcribe if supported
+    let transcriptText = ''
     if (isSTTSupported() && audioBuffer) {
       try {
         const { encodeWav } = await import('../lib/wav')
@@ -166,7 +167,8 @@ export function AutoClip() {
         const transcript = await transcribeAudio(wavBlob, 'en-US')
         if (transcript.words.length > 0) {
           setWordTimestamps(transcript.words)
-          toast('info', `Transcribed ${transcript.words.length} words`)
+          transcriptText = transcript.fullText
+          toast('info', `Transcribed ${transcript.words.length} words via ${transcript.engine}`)
         }
       } catch {
         // STT failed, use estimateWordTimestamps as fallback
@@ -185,6 +187,7 @@ export function AutoClip() {
     try {
       const videoAnalysis = await analyzeVideo({
         duration,
+        transcript: transcriptText || undefined,
         audioEnergyProfile: energyProfile.length > 0 ? energyProfile : undefined,
         title: videoFile?.name,
       })
