@@ -1,10 +1,37 @@
 import { Router } from 'express';
 import { URL } from 'url';
 import { spawn } from 'child_process';
-import { existsSync, chmodSync } from 'fs';
+import { existsSync } from 'fs';
 import { join } from 'path';
 
 const router = Router();
+
+// Debug endpoint for yt-dlp status
+router.get('/yt-dlp-status', (_req, res) => {
+  const path = getYtDlpPath();
+  const info: any = { path, exists: !!path };
+
+  if (!path) {
+    res.json(info);
+    return;
+  }
+
+  const proc = spawn(path, ['--version'], { timeout: 10000 });
+  let stdout = '';
+  let stderr = '';
+  proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+  proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+  proc.on('close', (code) => {
+    info.version = stdout.trim();
+    info.exitCode = code;
+    info.stderr = stderr.slice(0, 200);
+    res.json(info);
+  });
+  proc.on('error', (e) => {
+    info.error = e.message;
+    res.json(info);
+  });
+});
 
 const BLOCKED_HOSTS = new Set([
   'localhost', '127.0.0.1', '0.0.0.0', '::1',
