@@ -34,6 +34,7 @@ const AISettings = lazy(() => import('./pages/AISettings').then(m => ({ default:
 const StockMedia = lazy(() => import('./pages/StockMedia').then(m => ({ default: m.StockMedia })))
 const BatchProcessor = lazy(() => import('./pages/BatchProcessor').then(m => ({ default: m.BatchProcessor })))
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
+const SmartReframe = lazy(() => import('./pages/SmartReframe').then(m => ({ default: m.SmartReframe })))
 const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
 
@@ -82,6 +83,7 @@ function App() {
         <Route path="/tools/stock-media" element={<ToolLayout active="stock-media"><StockMedia /></ToolLayout>} />
         <Route path="/tools/batch" element={<ToolLayout active="batch"><ErrorBoundary><BatchProcessor /></ErrorBoundary></ToolLayout>} />
         <Route path="/tools/templates" element={<ToolLayout active="templates"><ErrorBoundary><Templates /></ErrorBoundary></ToolLayout>} />
+        <Route path="/tools/smart-reframe" element={<ToolLayout active="smart-reframe"><ErrorBoundary><SmartReframe /></ErrorBoundary></ToolLayout>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

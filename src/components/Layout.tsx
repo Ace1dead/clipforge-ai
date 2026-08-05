@@ -24,6 +24,7 @@ const NAV: NavGroup[] = [
       { to: '/tools/stock-media', label: 'Stock Media', icon: <Film size={16} /> },
       { to: '/tools/batch', label: 'Batch Process', icon: <Layers size={16} /> },
       { to: '/tools/templates', label: 'Templates', icon: <Wand2 size={16} /> },
+      { to: '/tools/smart-reframe', label: 'Smart Reframe', icon: <Crop size={16} /> },
     ],
   },
   {
