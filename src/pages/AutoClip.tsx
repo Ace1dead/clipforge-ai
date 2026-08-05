@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Scissors, Sparkles, Download, Loader2, Zap, Clock, Hash, Eye, Link2, Upload, Play, Check, AlertCircle, ChevronDown, Film, Type, Layers, Wand2, Settings, Video, Music, ArrowRight } from 'lucide-react'
 import { MediaDropzone } from '../components/MediaDropzone'
@@ -57,6 +57,15 @@ export function AutoClip() {
 
   const abortRef = useRef<AbortController | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (videoUrl && videoUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(videoUrl)
+      }
+    }
+  }, [])
 
   const selectedClip = clips.find(c => c.id === selectedClipId) ?? null
 
@@ -354,6 +363,10 @@ export function AutoClip() {
   }, [videoUrl, analysis, wordTimestamps, navigate])
 
   const resetToStart = useCallback(() => {
+    // Revoke blob URLs to prevent memory leaks
+    if (videoUrl && videoUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(videoUrl)
+    }
     setStep('url')
     setUrlInput('')
     setVideoUrl(null)
@@ -366,7 +379,7 @@ export function AutoClip() {
     setWordTimestamps([])
     setExportingClipId(null)
     setExportProgress(0)
-  }, [])
+  }, [videoUrl])
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-green'
