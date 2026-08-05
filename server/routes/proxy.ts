@@ -1,13 +1,12 @@
 import { Router } from 'express';
 import { URL } from 'url';
-import ytdl from '@distube/ytdl-core';
 
 const router = Router();
 
 const BLOCKED_HOSTS = new Set([
   'localhost', '127.0.0.1', '0.0.0.0', '::1',
-  '169.254.169.254', // AWS metadata
-  'metadata.google.internal', // GCP metadata
+  '169.254.169.254',
+  'metadata.google.internal',
 ]);
 
 function isSafeUrl(urlStr: string): boolean {
@@ -16,7 +15,6 @@ function isSafeUrl(urlStr: string): boolean {
     if (!['http:', 'https:'].includes(url.protocol)) return false;
     if (BLOCKED_HOSTS.has(url.hostname)) return false;
     if (url.hostname.endsWith('.internal') || url.hostname.endsWith('.local')) return false;
-    // Block private IP ranges
     const ip = url.hostname.replace(/^\[|^::ffff:/, '').replace(/\]$/, '');
     if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.)/.test(ip)) return false;
     return true;
@@ -24,6 +22,157 @@ function isSafeUrl(urlStr: string): boolean {
     return false;
   }
 }
+
+function isYouTubeUrl(url: string): boolean {
+  return /(?:youtube\.com|youtu\.be|youtube\.com\/embed|youtube\.com\/shorts)/i.test(url);
+}
+
+// Primary: cobalt.tools API (used by SnapTube-like downloaders)
+async function downloadViaCobalt(url: string): Promise<{ stream: ReadableStream; contentType: string; filename: string }> {
+  const cobaltRes = await fetch('https://api.cobalt.tools/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      url,
+      downloadMode: 'auto',
+      filenameStyle: 'basic',
+      videoQuality: '1080',
+      youtubeVideoCodec: 'h264',
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!cobaltRes.ok) {
+    const err = await cobaltRes.json().catch(() => ({}));
+    throw new Error(`Cobalt error: ${cobaltRes.status} ${JSON.stringify(err)}`);
+  }
+
+  const data = await cobaltRes.json();
+
+  if (data.status === 'redirect') {
+    // Direct URL redirect
+    const videoRes = await fetch(data.url, {
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!videoRes.ok) throw new Error(`Download failed: ${videoRes.status}`);
+    return {
+      stream: videoRes.body!,
+      contentType: videoRes.headers.get('content-type') || 'video/mp4',
+      filename: data.filename || 'video.mp4',
+    };
+  }
+
+  if (data.status === 'tunnel') {
+    return {
+      stream: data.url instanceof ReadableStream ? data.url : (await fetch(data.url, { signal: AbortSignal.timeout(120000) })).body!,
+      contentType: 'video/mp4',
+      filename: data.filename || 'video.mp4',
+    };
+  }
+
+  throw new Error(`Cobalt unexpected response: ${data.status}`);
+}
+
+// Fallback: @distube/ytdl-core with Android client
+async function downloadViaYtdl(youtubeUrl: string): Promise<{ stream: import('stream').Readable; contentType: string; filename: string }> {
+  const ytdl = await import('@distube/ytdl-core');
+  const info = await ytdl.default.getInfo(youtubeUrl);
+  const format = ytdl.default.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
+  const stream = ytdl.default.downloadFromInfo(info, { format });
+  return {
+    stream: stream as any,
+    contentType: format.mimeType || 'video/mp4',
+    filename: `${info.videoDetails.title.replace(/[^a-zA-Z0-9]/g, '_')}.mp4`,
+  };
+}
+
+// YouTube video download endpoint
+router.get('/youtube', async (req, res) => {
+  const { url } = req.query;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Missing url parameter' });
+    return;
+  }
+
+  if (!isYouTubeUrl(url)) {
+    res.status(400).json({ error: 'Not a YouTube URL' });
+    return;
+  }
+
+  // Try cobalt first (most reliable)
+  try {
+    const { stream, contentType, filename } = await downloadViaCobalt(url);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    if (stream instanceof ReadableStream) {
+      const reader = stream.getReader();
+      const pump = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(Buffer.from(value));
+        }
+        res.end();
+      };
+      pump().catch(() => res.end());
+    } else {
+      const nodeStream = stream as any;
+      nodeStream.pipe(res);
+      nodeStream.on('error', () => { if (!res.headersSent) res.status(500).json({ error: 'Stream error' }); });
+    }
+    return;
+  } catch (cobaltErr) {
+    console.warn('Cobalt failed, trying ytdl-core:', cobaltErr instanceof Error ? cobaltErr.message : cobaltErr);
+  }
+
+  // Fallback: ytdl-core
+  try {
+    const { stream, contentType, filename } = await downloadViaYtdl(url);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    stream.pipe(res);
+    stream.on('error', (err: Error) => {
+      console.error('ytdl stream error:', err.message);
+      if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
+    });
+  } catch (ytdlErr) {
+    console.error('ytdl-core failed:', ytdlErr instanceof Error ? ytdlErr.message : ytdlErr);
+    res.status(500).json({
+      error: 'YouTube download failed. Try downloading the video manually and uploading the file.',
+    });
+  }
+});
+
+// YouTube video info endpoint
+router.get('/youtube/info', async (req, res) => {
+  const { url } = req.query;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Missing url parameter' });
+    return;
+  }
+
+  if (!isYouTubeUrl(url)) {
+    res.status(400).json({ error: 'Not a YouTube URL' });
+    return;
+  }
+
+  try {
+    const ytdl = await import('@distube/ytdl-core');
+    const info = await ytdl.default.getInfo(url);
+    res.json({
+      title: info.videoDetails.title,
+      duration: parseInt(info.videoDetails.lengthSeconds),
+      thumbnail: info.videoDetails.thumbnails.pop()?.url,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: `Failed to get info: ${msg.slice(0, 200)}` });
+  }
+});
 
 // Proxy media downloads (avoids CORS for direct media URLs)
 router.get('/media', async (req, res) => {
@@ -54,75 +203,6 @@ router.get('/media', async (req, res) => {
     res.send(Buffer.from(buffer));
   } catch (e) {
     res.status(500).json({ error: 'Proxy error' });
-  }
-});
-
-// YouTube video download endpoint
-router.get('/youtube', async (req, res) => {
-  const { url } = req.query;
-  if (!url || typeof url !== 'string') {
-    res.status(400).json({ error: 'Missing url parameter' });
-    return;
-  }
-
-  // Validate YouTube URL
-  if (!ytdl.validateURL(url)) {
-    res.status(400).json({ error: 'Invalid YouTube URL' });
-    return;
-  }
-
-  try {
-    const info = await ytdl.getInfo(url);
-    const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
-
-    res.setHeader('Content-Type', format.mimeType || 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${info.videoDetails.title.replace(/[^a-zA-Z0-9]/g, '_')}.mp4"`);
-    res.setHeader('Content-Length', format.contentLength || '0');
-
-    const stream = ytdl.downloadFromInfo(info, { format });
-    stream.pipe(res);
-
-    stream.on('error', (err) => {
-      console.error('YouTube stream error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Download failed' });
-      }
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('YouTube download error:', msg);
-    if (!res.headersSent) {
-      res.status(500).json({ error: `YouTube download failed: ${msg.slice(0, 200)}` });
-    }
-  }
-});
-
-// YouTube video info endpoint
-router.get('/youtube/info', async (req, res) => {
-  const { url } = req.query;
-  if (!url || typeof url !== 'string') {
-    res.status(400).json({ error: 'Missing url parameter' });
-    return;
-  }
-
-  if (!ytdl.validateURL(url)) {
-    res.status(400).json({ error: 'Invalid YouTube URL' });
-    return;
-  }
-
-  try {
-    const info = await ytdl.getInfo(url);
-    const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
-    res.json({
-      title: info.videoDetails.title,
-      duration: parseInt(info.videoDetails.lengthSeconds),
-      thumbnail: info.videoDetails.thumbnails.pop()?.url,
-      format: format.qualityLabel,
-      mimeType: format.mimeType,
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    res.status(500).json({ error: `Failed to get video info: ${msg.slice(0, 200)}` });
   }
 });
 
