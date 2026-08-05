@@ -12,8 +12,8 @@ services:
       - key: ADMIN_KEY
         value: clipforge-admin-master-key-2026
       - key: JWT_SECRET
-        generateValue: true
+        value: clipforge-jwt-secret-2026-production
       - key: JWT_REFRESH_SECRET
-        generateValue: true
+        value: clipforge-jwt-refresh-secret-2026-production
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: https://clipforge-ai-2ttg.onrender.com
