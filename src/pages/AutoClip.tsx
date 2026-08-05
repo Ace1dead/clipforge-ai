@@ -675,6 +675,30 @@ export function AutoClip() {
                 </ul>
               </Card>
             )}
+
+            {/* YouTube B-Roll Suggestions */}
+            {selectedClip && selectedClip.hashtags.length > 0 && (
+              <Card className="p-5">
+                <h3 className="font-semibold text-[14px] mb-3 flex items-center gap-2">
+                  <Film size={14} className="text-accent" />
+                  B-Roll Ideas
+                </h3>
+                <div className="space-y-2">
+                  {selectedClip.hashtags.slice(0, 3).map((tag, i) => (
+                    <div key={i} className="bg-elevated/60 rounded-lg p-2.5 text-[12px]">
+                      <p className="font-medium">Search: "{tag} cinematic b-roll"</p>
+                      <p className="text-[11px] text-faint mt-1">Use as transition overlay or background</p>
+                    </div>
+                  ))}
+                  {selectedClip.hooks.length > 0 && (
+                    <div className="bg-elevated/60 rounded-lg p-2.5 text-[12px]">
+                      <p className="font-medium">Search: "{selectedClip.hooks[0]} green screen overlay"</p>
+                      <p className="text-[11px] text-faint mt-1">Text overlay transition element</p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       )}

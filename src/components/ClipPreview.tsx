@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Maximize2, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
 import { Button, Badge } from './ui'
 import { fmtTime } from '../lib/format'
 
@@ -7,6 +7,7 @@ interface ClipPreviewProps {
   videoUrl: string
   start: number
   end: number
+  totalDuration?: number
   title?: string
   platform?: string
   hooks?: string[]
@@ -14,18 +15,21 @@ interface ClipPreviewProps {
   onNext?: () => void
   hasPrev?: boolean
   hasNext?: boolean
+  onBoundaryChange?: (start: number, end: number) => void
 }
 
-export function ClipPreview({ videoUrl, start, end, title, platform, hooks, onPrev, onNext, hasPrev, hasNext }: ClipPreviewProps) {
+export function ClipPreview({ videoUrl, start, end, totalDuration, title, platform, hooks, onPrev, onNext, hasPrev, hasNext, onBoundaryChange }: ClipPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [muted, setMuted] = useState(false)
   const [hookText, setHookText] = useState('')
+  const [dragging, setDragging] = useState<'start' | 'end' | null>(null)
   const rafRef = useRef<number>(0)
 
   const duration = end - start
+  const total = totalDuration || end
 
   // Draw loop — renders video frame + overlay effects
   const draw = useCallback(() => {
@@ -179,6 +183,39 @@ export function ClipPreview({ videoUrl, start, end, title, platform, hooks, onPr
     setCurrentTime(video.currentTime - start)
   }, [start, duration])
 
+  // Handle boundary dragging
+  useEffect(() => {
+    if (!dragging || !onBoundaryChange) return
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+      const timeline = document.querySelector('[data-timeline]') as HTMLElement
+      if (!timeline) return
+      const rect = timeline.getBoundingClientRect()
+      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+      const time = pct * total
+
+      if (dragging === 'start') {
+        onBoundaryChange(Math.min(time, end - 1), end)
+      } else {
+        onBoundaryChange(start, Math.max(time, start + 1))
+      }
+    }
+
+    const handleUp = () => setDragging(null)
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    window.addEventListener('touchmove', handleMove)
+    window.addEventListener('touchend', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+      window.removeEventListener('touchmove', handleMove)
+      window.removeEventListener('touchend', handleUp)
+    }
+  }, [dragging, start, end, total, onBoundaryChange])
+
   const skipFrames = useCallback((frames: number) => {
     seek(currentTime + frames / 30) // assume 30fps
   }, [currentTime, seek])
@@ -228,24 +265,74 @@ export function ClipPreview({ videoUrl, start, end, title, platform, hooks, onPr
           </div>
         )}
 
-        {/* Progress bar */}
-        <div
-          className="relative h-1.5 bg-white/10 rounded-full cursor-pointer group"
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect()
-            const pct = (e.clientX - rect.left) / rect.width
-            seek(pct * duration)
-          }}
-        >
-          <div
-            className="absolute inset-y-0 left-0 bg-accent rounded-full transition-all"
-            style={{ width: `${(currentTime / duration) * 100}%` }}
-          />
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ left: `calc(${(currentTime / duration) * 100}% - 6px)` }}
-          />
+        {/* Timeline with boundary handles */}
+        <div className="relative">
+          {/* Full timeline background */}
+          <div data-timeline className="relative h-8 bg-white/5 rounded-lg overflow-hidden">
+            {/* Clip region highlight */}
+            <div
+              className="absolute inset-y-0 bg-accent/20 border-y-2 border-accent/50"
+              style={{
+                left: `${(start / total) * 100}%`,
+                width: `${((end - start) / total) * 100}%`,
+              }}
+            />
+
+            {/* Playhead */}
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-white z-10"
+              style={{ left: `${((start + currentTime) / total) * 100}%` }}
+            />
+
+            {/* Start handle */}
+            {onBoundaryChange && (
+              <div
+                className="absolute top-0 bottom-0 w-3 bg-accent cursor-ew-resize z-20 hover:bg-accent/80 flex items-center justify-center"
+                style={{ left: `calc(${(start / total) * 100}% - 6px)` }}
+                onMouseDown={(e) => { e.stopPropagation(); setDragging('start') }}
+                onTouchStart={(e) => { e.stopPropagation(); setDragging('start') }}
+              >
+                <GripVertical size={10} className="text-white/60" />
+              </div>
+            )}
+
+            {/* End handle */}
+            {onBoundaryChange && (
+              <div
+                className="absolute top-0 bottom-0 w-3 bg-accent cursor-ew-resize z-20 hover:bg-accent/80 flex items-center justify-center"
+                style={{ left: `calc(${(end / total) * 100}% - 6px)` }}
+                onMouseDown={(e) => { e.stopPropagation(); setDragging('end') }}
+                onTouchStart={(e) => { e.stopPropagation(); setDragging('end') }}
+              >
+                <GripVertical size={10} className="text-white/60" />
+              </div>
+            )}
+
+            {/* Click to seek */}
+            <div
+              className="absolute inset-0 cursor-pointer"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const pct = (e.clientX - rect.left) / rect.width
+                seek(pct * total - start)
+              }}
+            />
+          </div>
+
+          {/* Time labels */}
+          <div className="flex justify-between mt-1 text-[10px] text-faint font-mono">
+            <span>{fmtTime(0)}</span>
+            <span>{fmtTime(duration)}</span>
+            <span>{fmtTime(total)}</span>
+          </div>
         </div>
+
+        {/* Boundary info */}
+        {onBoundaryChange && (
+          <div className="flex items-center gap-2 text-[11px] text-faint">
+            <span>Clip: {fmtTime(start)} → {fmtTime(end)} ({fmtTime(duration)})</span>
+          </div>
+        )}
 
         {/* Buttons */}
         <div className="flex items-center justify-between">
