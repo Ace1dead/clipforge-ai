@@ -11,6 +11,7 @@ import adminRoutes from './routes/admin.js';
 import toolRoutes from './routes/tools.js';
 import proxyRoutes from './routes/proxy.js';
 import aiRoutes from './routes/ai.js';
+import transcribeRoutes from './routes/transcribe.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -68,6 +69,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/tools', toolRoutes);
   app.use('/api/proxy', proxyRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/transcribe', rateLimitMiddleware(10, 60000)); // 10 transcriptions per minute
+  app.use('/api/transcribe', transcribeRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

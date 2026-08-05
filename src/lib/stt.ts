@@ -8,10 +8,12 @@ export interface TranscriptResult {
   words: WordTimestamp[];
   fullText: string;
   language: string;
+  engine: 'web-speech' | 'deepgram' | 'estimated';
 }
 
+// ─── Web Speech API (browser-native, Chrome-only) ─────────────
+
 let recognition: any = null;
-let activeBlobUrl: string | null = null;
 
 export function isSTTSupported(): boolean {
   return typeof window !== 'undefined' && (
@@ -20,10 +22,6 @@ export function isSTTSupported(): boolean {
 }
 
 export function getAvailableLanguages(): { code: string; name: string }[] {
-  if (!isSTTSupported()) return [];
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  if (!SpeechRecognition) return [];
-  // Common languages supported by Web Speech API
   return [
     { code: 'en-US', name: 'English (US)' },
     { code: 'en-GB', name: 'English (UK)' },
@@ -41,7 +39,7 @@ export function getAvailableLanguages(): { code: string; name: string }[] {
   ];
 }
 
-export function transcribeAudio(
+function transcribeWebSpeech(
   audioBlob: Blob,
   language = 'en-US',
   onProgress?: (p: number) => void,
@@ -49,11 +47,10 @@ export function transcribeAudio(
 ): Promise<TranscriptResult> {
   return new Promise((resolve, reject) => {
     if (!isSTTSupported()) {
-      reject(new Error('Speech recognition not supported in this browser'));
+      reject(new Error('Speech recognition not supported'));
       return;
     }
 
-    // Stop any previous recognition instance
     if (recognition) {
       try { recognition.stop(); } catch { /* ignore */ }
       recognition = null;
@@ -70,10 +67,7 @@ export function transcribeAudio(
     let startTime = Date.now();
     let finalText = '';
 
-    recognition.onstart = () => {
-      startTime = Date.now();
-      onProgress?.(0);
-    };
+    recognition.onstart = () => { startTime = Date.now(); onProgress?.(0); };
 
     recognition.onresult = (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -102,29 +96,23 @@ export function transcribeAudio(
         words: words.sort((a, b) => a.start - b.start),
         fullText: finalText.trim(),
         language,
+        engine: 'web-speech',
       });
     };
 
     recognition.onerror = (event: any) => {
       if (event.error === 'no-speech') {
-        resolve({ words: [], fullText: '', language });
+        resolve({ words: [], fullText: '', language, engine: 'web-speech' });
       } else {
         reject(new Error(`Speech recognition error: ${event.error}`));
       }
     };
 
-    signal?.addEventListener('abort', () => {
-      recognition?.stop();
-    });
+    signal?.addEventListener('abort', () => { recognition?.stop(); });
 
-    // Convert blob to audio element and play for recognition
     const blobUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(blobUrl);
-    audio.onplay = () => {
-      try {
-        recognition.start();
-      } catch { /* already started */ }
-    };
+    audio.onplay = () => { try { recognition.start(); } catch { /* already started */ } };
     audio.onended = () => {
       URL.revokeObjectURL(blobUrl);
       setTimeout(() => recognition?.stop(), 500);
@@ -137,33 +125,119 @@ export function transcribeAudio(
   });
 }
 
-export function stopTranscription(): void {
-  if (recognition) {
-    try { recognition.stop(); } catch { /* ignore */ }
-    recognition = null;
+// ─── Deepgram API (server proxy) ──────────────────────────────
+
+async function transcribeDeepgram(
+  audioBlob: Blob,
+  language = 'en',
+  onProgress?: (p: number) => void,
+  signal?: AbortSignal
+): Promise<TranscriptResult> {
+  onProgress?.(0.1);
+
+  // Convert blob to base64 for server transport
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+  onProgress?.(0.3);
+
+  const res = await fetch('/api/transcribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audio: base64, language, mimeType: audioBlob.type || 'audio/webm' }),
+    signal,
+  });
+
+  onProgress?.(0.8);
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Transcription failed' }));
+    throw new Error(err.error || `Deepgram error ${res.status}`);
   }
-  if (activeBlobUrl) {
-    URL.revokeObjectURL(activeBlobUrl);
-    activeBlobUrl = null;
-  }
+
+  const data = await res.json();
+  onProgress?.(1);
+
+  return {
+    words: data.words ?? [],
+    fullText: data.fullText ?? '',
+    language: data.language ?? language,
+    engine: 'deepgram',
+  };
 }
 
-// Offline fallback: estimate word timestamps from text duration
-export function estimateWordTimestamps(
+// ─── Estimated timestamps (offline fallback) ──────────────────
+
+function estimateTimestamps(
   text: string,
   duration: number,
   wordsPerSecond = 2.5
-): WordTimestamp[] {
+): TranscriptResult {
   const words = text.split(/\s+/).filter(Boolean);
-  const totalWords = words.length;
-  const wordDuration = duration / Math.max(totalWords, 1);
+  const wordDuration = duration / Math.max(words.length, 1);
   const gap = 1 / wordsPerSecond;
 
   let currentTime = 0;
-  return words.map((word) => {
+  const timestamps: WordTimestamp[] = words.map((word) => {
     const start = currentTime;
     const end = Math.min(start + wordDuration, start + gap);
     currentTime = end + 0.02;
     return { word, start, end };
   });
+
+  return {
+    words: timestamps,
+    fullText: text,
+    language: 'en',
+    engine: 'estimated',
+  };
+}
+
+// ─── Main export with fallback chain ──────────────────────────
+
+export async function transcribeAudio(
+  audioBlob: Blob,
+  language = 'en-US',
+  onProgress?: (p: number) => void,
+  signal?: AbortSignal,
+  preferredEngine?: 'web-speech' | 'deepgram'
+): Promise<TranscriptResult> {
+  // Try preferred engine first, then fallback chain
+  const engines = preferredEngine
+    ? [preferredEngine, ...(preferredEngine === 'web-speech' ? ['deepgram'] : ['web-speech'])]
+    : ['web-speech', 'deepgram'];
+
+  for (const engine of engines) {
+    try {
+      if (engine === 'web-speech' && isSTTSupported()) {
+        return await transcribeWebSpeech(audioBlob, language, onProgress, signal);
+      }
+      if (engine === 'deepgram') {
+        return await transcribeDeepgram(audioBlob, language.replace('-', ''), onProgress, signal);
+      }
+    } catch (e) {
+      // If this engine fails, try next
+      continue;
+    }
+  }
+
+  // All engines failed — return empty (caller should use estimateWordTimestamps)
+  return { words: [], fullText: '', language, engine: 'estimated' };
+}
+
+export function stopTranscription(): void {
+  if (recognition) {
+    try { recognition.stop(); } catch { /* ignore */ }
+    recognition = null;
+  }
+}
+
+// ─── Estimated timestamps (standalone export) ─────────────────
+
+export function estimateWordTimestamps(
+  text: string,
+  duration: number,
+  wordsPerSecond = 2.5
+): WordTimestamp[] {
+  return estimateTimestamps(text, duration, wordsPerSecond).words;
 }
