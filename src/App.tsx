@@ -32,6 +32,7 @@ const Calculators = lazy(() => import('./pages/Calculators').then(m => ({ defaul
 const AISettings = lazy(() => import('./pages/AISettings').then(m => ({ default: m.AISettings })))
 const StockMedia = lazy(() => import('./pages/StockMedia').then(m => ({ default: m.StockMedia })))
 const BatchProcessor = lazy(() => import('./pages/BatchProcessor').then(m => ({ default: m.BatchProcessor })))
+const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
 const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
 
@@ -79,6 +80,7 @@ function App() {
         <Route path="/tools/viral-scanner" element={<ToolLayout active="viral-scanner"><ViralScanner /></ToolLayout>} />
         <Route path="/tools/stock-media" element={<ToolLayout active="stock-media"><StockMedia /></ToolLayout>} />
         <Route path="/tools/batch" element={<ToolLayout active="batch"><BatchProcessor /></ToolLayout>} />
+        <Route path="/tools/templates" element={<ToolLayout active="templates"><Templates /></ToolLayout>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
