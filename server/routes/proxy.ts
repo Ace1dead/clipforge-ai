@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { URL } from 'url';
+import { spawn } from 'child_process';
+import { existsSync, chmodSync } from 'fs';
+import { join } from 'path';
 
 const router = Router();
 
@@ -27,69 +30,47 @@ function isYouTubeUrl(url: string): boolean {
   return /(?:youtube\.com|youtu\.be|youtube\.com\/embed|youtube\.com\/shorts)/i.test(url);
 }
 
-// Primary: cobalt.tools API (used by SnapTube-like downloaders)
-async function downloadViaCobalt(url: string): Promise<{ stream: ReadableStream; contentType: string; filename: string }> {
-  const cobaltRes = await fetch('https://api.cobalt.tools/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({
-      url,
-      downloadMode: 'auto',
-      filenameStyle: 'basic',
-      videoQuality: '1080',
-      youtubeVideoCodec: 'h264',
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-
-  if (!cobaltRes.ok) {
-    const err = await cobaltRes.json().catch(() => ({}));
-    throw new Error(`Cobalt error: ${cobaltRes.status} ${JSON.stringify(err)}`);
+function getYtDlpPath(): string | null {
+  const candidates = [
+    join(process.cwd(), 'yt-dlp'),
+    join(process.cwd(), 'node_modules', '.bin', 'yt-dlp'),
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
   }
+  return null;
+}
 
-  const data = await cobaltRes.json();
+function runYtDlp(args: string[], timeoutMs = 120000): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const ytDlpPath = getYtDlpPath();
+    if (!ytDlpPath) {
+      reject(new Error('yt-dlp not found on server'));
+      return;
+    }
 
-  if (data.status === 'redirect') {
-    // Direct URL redirect
-    const videoRes = await fetch(data.url, {
-      signal: AbortSignal.timeout(120000),
+    const proc = spawn(ytDlpPath, args, {
+      timeout: timeoutMs,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     });
-    if (!videoRes.ok) throw new Error(`Download failed: ${videoRes.status}`);
-    return {
-      stream: videoRes.body!,
-      contentType: videoRes.headers.get('content-type') || 'video/mp4',
-      filename: data.filename || 'video.mp4',
-    };
-  }
 
-  if (data.status === 'tunnel') {
-    return {
-      stream: data.url instanceof ReadableStream ? data.url : (await fetch(data.url, { signal: AbortSignal.timeout(120000) })).body!,
-      contentType: 'video/mp4',
-      filename: data.filename || 'video.mp4',
-    };
-  }
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
 
-  throw new Error(`Cobalt unexpected response: ${data.status}`);
+    proc.on('close', (code) => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(stderr || `yt-dlp exited with code ${code}`));
+    });
+
+    proc.on('error', reject);
+  });
 }
 
-// Fallback: @distube/ytdl-core with Android client
-async function downloadViaYtdl(youtubeUrl: string): Promise<{ stream: import('stream').Readable; contentType: string; filename: string }> {
-  const ytdl = await import('@distube/ytdl-core');
-  const info = await ytdl.default.getInfo(youtubeUrl);
-  const format = ytdl.default.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
-  const stream = ytdl.default.downloadFromInfo(info, { format });
-  return {
-    stream: stream as any,
-    contentType: format.mimeType || 'video/mp4',
-    filename: `${info.videoDetails.title.replace(/[^a-zA-Z0-9]/g, '_')}.mp4`,
-  };
-}
-
-// YouTube video download endpoint
+// YouTube video download via yt-dlp
 router.get('/youtube', async (req, res) => {
   const { url } = req.query;
   if (!url || typeof url !== 'string') {
@@ -102,52 +83,67 @@ router.get('/youtube', async (req, res) => {
     return;
   }
 
-  // Try cobalt first (most reliable)
-  try {
-    const { stream, contentType, filename } = await downloadViaCobalt(url);
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
-    if (stream instanceof ReadableStream) {
-      const reader = stream.getReader();
-      const pump = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(Buffer.from(value));
-        }
-        res.end();
-      };
-      pump().catch(() => res.end());
-    } else {
-      const nodeStream = stream as any;
-      nodeStream.pipe(res);
-      nodeStream.on('error', () => { if (!res.headersSent) res.status(500).json({ error: 'Stream error' }); });
-    }
+  const ytDlpPath = getYtDlpPath();
+  if (!ytDlpPath) {
+    res.status(500).json({ error: 'yt-dlp not installed on server' });
     return;
-  } catch (cobaltErr) {
-    console.warn('Cobalt failed, trying ytdl-core:', cobaltErr instanceof Error ? cobaltErr.message : cobaltErr);
   }
 
-  // Fallback: ytdl-core
   try {
-    const { stream, contentType, filename } = await downloadViaYtdl(url);
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    stream.pipe(res);
-    stream.on('error', (err: Error) => {
-      console.error('ytdl stream error:', err.message);
+    // Get video info first for filename
+    const { stdout: infoJson } = await runYtDlp([
+      '--dump-json', '--no-download', url,
+    ], 30000);
+
+    const info = JSON.parse(infoJson);
+    const title = (info.title || 'video').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
+    const ext = info.ext || 'mp4';
+
+    res.setHeader('Content-Type', `video/${ext}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${title}.${ext}"`);
+
+    // Stream video directly to response
+    const proc = spawn(ytDlpPath, [
+      '-f', 'best[height<=720]/best',
+      '--no-check-certificates',
+      '--no-warnings',
+      '-o', '-',  // output to stdout
+      url,
+    ], {
+      timeout: 180000,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+
+    proc.stdout.pipe(res);
+
+    let errorOutput = '';
+    proc.stderr.on('data', (d: Buffer) => { errorOutput += d.toString(); });
+
+    proc.on('error', (err) => {
+      console.error('yt-dlp spawn error:', err.message);
       if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
+      else res.end();
     });
-  } catch (ytdlErr) {
-    console.error('ytdl-core failed:', ytdlErr instanceof Error ? ytdlErr.message : ytdlErr);
-    res.status(500).json({
-      error: 'YouTube download failed. Try downloading the video manually and uploading the file.',
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        console.error('yt-dlp error:', errorOutput.slice(0, 300));
+        if (!res.headersSent) {
+          res.status(500).json({ error: `Download failed: ${errorOutput.slice(0, 200)}` });
+        }
+      }
+      res.end();
     });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('YouTube download error:', msg);
+    if (!res.headersSent) {
+      res.status(500).json({ error: `YouTube download failed: ${msg.slice(0, 200)}` });
+    }
   }
 });
 
-// YouTube video info endpoint
+// YouTube video info
 router.get('/youtube/info', async (req, res) => {
   const { url } = req.query;
   if (!url || typeof url !== 'string') {
@@ -161,12 +157,16 @@ router.get('/youtube/info', async (req, res) => {
   }
 
   try {
-    const ytdl = await import('@distube/ytdl-core');
-    const info = await ytdl.default.getInfo(url);
+    const { stdout } = await runYtDlp([
+      '--dump-json', '--no-download', url,
+    ], 30000);
+
+    const info = JSON.parse(stdout);
     res.json({
-      title: info.videoDetails.title,
-      duration: parseInt(info.videoDetails.lengthSeconds),
-      thumbnail: info.videoDetails.thumbnails.pop()?.url,
+      title: info.title,
+      duration: info.duration,
+      thumbnail: info.thumbnail,
+      uploader: info.uploader,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
