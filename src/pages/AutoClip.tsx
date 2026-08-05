@@ -60,6 +60,11 @@ export function AutoClip() {
     return /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)/i.test(url)
   }
 
+  const extractVideoId = (url: string): string | null => {
+    const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/)
+    return m ? m[1] : null
+  }
+
   const handleUrlDownload = useCallback(async () => {
     const url = urlInput.trim()
     if (!url) { toast('error', 'Please enter a URL'); return }
@@ -72,11 +77,17 @@ export function AutoClip() {
 
     try {
       const isYT = isYouTubeUrl(url)
-      const endpoint = isYT
-        ? '/api/proxy/youtube?url=' + encodeURIComponent(url)
-        : '/api/proxy/media?url=' + encodeURIComponent(url)
+      if (isYT) {
+        toast('info', 'YouTube requires direct download. Opening embed preview...')
+        setVideoUrl(null)
+        setVideoFile(null)
+        setDownloadProgress(1)
+        setDownloading(false)
+        return
+      }
 
-      toast('info', isYT ? 'Downloading from YouTube...' : 'Downloading video...')
+      const endpoint = '/api/proxy/media?url=' + encodeURIComponent(url)
+      toast('info', 'Downloading video...')
 
       const res = await fetch(endpoint, { signal: abortRef.current.signal })
       if (!res.ok) {
@@ -297,7 +308,7 @@ export function AutoClip() {
             AI Auto Clip
             <Badge tone="green">AI-Powered</Badge>
           </h1>
-          <p className="text-[13px] text-muted">Extract premium clips from long videos using AI analysis. Powered by free models via OmniRoute.</p>
+          <p className="text-[13px] text-muted">Extract premium clips from long videos using AI analysis. Supports direct video URLs and file uploads.</p>
         </div>
       </div>
 
@@ -330,7 +341,7 @@ export function AutoClip() {
             <div className="space-y-3">
               <div className="relative">
                 <Input
-                  placeholder="Paste YouTube, TikTok, or direct video link..."
+                  placeholder="Paste a direct video link (.mp4, .webm, etc.)..."
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && urlInput.trim()) handleUrlDownload() }}
@@ -347,6 +358,25 @@ export function AutoClip() {
                   Fetch
                 </Button>
               </div>
+
+              {urlInput.trim() && isYouTubeUrl(urlInput.trim()) && (
+                <div className="bg-amber/10 border border-amber/20 rounded-xl p-3 text-[12px]">
+                  <div className="flex items-center gap-2 font-medium text-amber">
+                    <AlertCircle size={14} /> YouTube Detected
+                  </div>
+                  <p className="text-muted mt-1">
+                    YouTube blocks direct downloads. Use the <strong>File Upload</strong> below — download the video from YouTube first, then drop it here.
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <Button size="xs" variant="secondary" onClick={() => window.open('https://www.y2mate.com/', '_blank')}>
+                      Download Helper
+                    </Button>
+                    <Button size="xs" variant="ghost" onClick={() => { navigator.clipboard.writeText('https://www.youtube.com/watch?v=' + extractVideoId(urlInput.trim()) || ''); toast('info', 'Copied embed code') }}>
+                      Copy Video ID
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {downloading && (
                 <div className="space-y-2">
