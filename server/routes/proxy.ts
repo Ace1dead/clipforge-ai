@@ -43,33 +43,6 @@ function getYtDlpPath(): string | null {
   return null;
 }
 
-function runYtDlp(args: string[], timeoutMs = 120000): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const ytDlpPath = getYtDlpPath();
-    if (!ytDlpPath) {
-      reject(new Error('yt-dlp not found on server'));
-      return;
-    }
-
-    const proc = spawn(ytDlpPath, args, {
-      timeout: timeoutMs,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-    });
-
-    let stdout = '';
-    let stderr = '';
-    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-
-    proc.on('close', (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(stderr || `yt-dlp exited with code ${code}`));
-    });
-
-    proc.on('error', reject);
-  });
-}
-
 // YouTube video download via yt-dlp
 router.get('/youtube', async (req, res) => {
   const { url } = req.query;
@@ -90,23 +63,14 @@ router.get('/youtube', async (req, res) => {
   }
 
   try {
-    // Get video info first for filename
-    const { stdout: infoJson } = await runYtDlp([
-      '--dump-json', '--no-download', url,
-    ], 30000);
+    res.setHeader('Content-Type', 'video/mp4');
 
-    const info = JSON.parse(infoJson);
-    const title = (info.title || 'video').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
-    const ext = info.ext || 'mp4';
-
-    res.setHeader('Content-Type', `video/${ext}`);
-    res.setHeader('Content-Disposition', `attachment; filename="${title}.${ext}"`);
-
-    // Stream video directly to response
+    // Stream video directly — no info fetch needed
     const proc = spawn(ytDlpPath, [
       '-f', 'best[height<=720]/best',
       '--no-check-certificates',
       '--no-warnings',
+      '--newline',
       '-o', '-',  // output to stdout
       url,
     ], {
@@ -140,37 +104,6 @@ router.get('/youtube', async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: `YouTube download failed: ${msg.slice(0, 200)}` });
     }
-  }
-});
-
-// YouTube video info
-router.get('/youtube/info', async (req, res) => {
-  const { url } = req.query;
-  if (!url || typeof url !== 'string') {
-    res.status(400).json({ error: 'Missing url parameter' });
-    return;
-  }
-
-  if (!isYouTubeUrl(url)) {
-    res.status(400).json({ error: 'Not a YouTube URL' });
-    return;
-  }
-
-  try {
-    const { stdout } = await runYtDlp([
-      '--dump-json', '--no-download', url,
-    ], 30000);
-
-    const info = JSON.parse(stdout);
-    res.json({
-      title: info.title,
-      duration: info.duration,
-      thumbnail: info.thumbnail,
-      uploader: info.uploader,
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    res.status(500).json({ error: `Failed to get info: ${msg.slice(0, 200)}` });
   }
 });
 
