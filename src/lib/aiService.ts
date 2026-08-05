@@ -1,7 +1,7 @@
 /**
  * AI Service Layer — Client-side only.
  * Users add their own API keys in AI Settings.
- * Fallback: Client keys → OmniRoute → suggest install
+ * Fallback: Client keys → Local AI server → suggest install
  */
 
 export interface AIProvider {
@@ -104,10 +104,10 @@ export function removeCustomProvider(providerId: string): void {
 
 /**
  * Generate content using client-side providers.
- * Fallback: providers with API keys → OmniRoute → error
+ * Fallback: providers with API keys → Local AI → error
  */
 export async function generateAI(request: AIRequest): Promise<AIResponse> {
-  // 1. Try client-side providers with API keys (non-OmniRoute)
+  // 1. Try client-side providers with API keys (non-local)
   const enabledProviders = currentSettings.providers
     .filter(p => p.enabled && p.apiKey && p.type !== 'omniroute')
     .sort((a, b) => a.priority - b.priority);
@@ -120,7 +120,7 @@ export async function generateAI(request: AIRequest): Promise<AIResponse> {
     }
   }
 
-  // 2. Try OmniRoute (free, local)
+  // 2. Try local AI server (free, self-hosted)
   if (currentSettings.useOmniRoute) {
     try {
       const omniProvider = currentSettings.providers.find(p => p.type === 'omniroute' && p.enabled);
@@ -128,13 +128,13 @@ export async function generateAI(request: AIRequest): Promise<AIResponse> {
         return await callProvider(omniProvider, request);
       }
     } catch {
-      // OmniRoute unavailable
+      // Local AI unavailable
     }
   }
 
   // 3. Nothing available
   throw new Error(
-    'No AI configured. Go to AI Settings and add your API key (OpenAI, Anthropic, Google, Groq, etc.) or enable OmniRoute for free models.'
+    'No AI configured. Go to AI Settings and add your API key (OpenAI, Anthropic, Google, Groq, etc.) or install a local AI server for free models.'
   );
 }
 

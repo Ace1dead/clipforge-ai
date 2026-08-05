@@ -1,7 +1,7 @@
 /**
  * AI Video Analysis & Clip Engine
  * Core intelligence for automated clip creation, viral analysis, and content generation.
- * Uses OmniRoute for free LLM access with auto-fallback.
+ * Uses client-side AI with auto-fallback to heuristics.
  */
 
 import { generateAI } from './aiService';

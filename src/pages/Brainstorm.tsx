@@ -58,7 +58,7 @@ Each hook must be under 15 words. Be creative and punchy.`
               score: h.score || 50,
               reason: h.reason || h.explanation || 'AI-generated',
             })))
-            toast('success', `Generated ${parsed.length} hooks via OmniRoute`)
+            toast('success', `Generated ${parsed.length} hooks with AI`)
           }
         } catch {
           toast('error', 'Failed to parse AI response')
@@ -128,7 +128,7 @@ Each hook must be under 15 words. Be creative and punchy.`
           })
         }
         setHooks(pool)
-        toast('info', 'Hooks generated (enable OmniRoute in AI Settings for AI-powered hooks)')
+        toast('info', 'Hooks generated (configure AI in AI Settings for AI-powered hooks)')
       }
     } catch (e) {
       toast('error', 'Failed to generate hooks', e instanceof Error ? e.message : undefined)
@@ -190,7 +190,7 @@ Each hook must be under 15 words. Be creative and punchy.`
                 className={`flex-1 py-2 px-3 rounded-lg text-[13px] font-medium border transition-colors ${aiMode ? 'bg-accent/20 border-accent/40 text-accent' : 'bg-elevated border-white/10 text-muted hover:border-white/20'}`}
               >
                 <Sparkles size={14} className="inline mr-1" />
-                AI (OmniRoute)
+                AI (Your Key)
               </button>
             </div>
 

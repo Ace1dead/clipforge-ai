@@ -70,7 +70,7 @@ export function AISettings() {
     }
     setSettings(newSettings)
     updateAISettings(newSettings)
-    toast('success', enabled ? 'OmniRoute enabled' : 'OmniRoute disabled')
+    toast('success', enabled ? 'Local AI enabled' : 'Local AI disabled')
   }
 
   const updateOmniRouteUrl = (url: string) => {
@@ -169,12 +169,12 @@ export function AISettings() {
         {hasKey || omniEnabled ? (
           <>
             <Check size={16} />
-            <span><strong>AI is active.</strong> {hasKey ? 'Using your API key.' : ''} {omniEnabled ? 'OmniRoute connected.' : ''}</span>
+            <span><strong>AI is active.</strong> {hasKey ? 'Using your API key.' : ''} {omniEnabled ? 'Local AI connected.' : ''}</span>
           </>
         ) : (
           <>
             <Key size={16} />
-            <span><strong>No AI configured.</strong> Add a provider key below or enable OmniRoute.</span>
+            <span><strong>No AI configured.</strong> Add a provider key below or enable Local AI.</span>
           </>
         )}
       </div>
@@ -277,7 +277,7 @@ export function AISettings() {
           <div className="flex items-center gap-3">
             <div className={`w-3 h-3 rounded-full ${omniRouteStatus.available ? 'bg-green' : 'bg-faint'}`} />
             <div>
-              <h3 className="font-semibold text-[14px]">OmniRoute (Free Models)</h3>
+              <h3 className="font-semibold text-[14px]">Local AI Server (Free Models)</h3>
               <p className="text-[12px] text-muted">
                 {omniRouteStatus.available
                   ? `${omniRouteStatus.freeModels ?? 0} free models — no API key needed`
@@ -359,7 +359,7 @@ export function AISettings() {
           <p>1. Click a provider above → paste your API key → done.</p>
           <p>2. Your key stays in your browser only — never sent to our servers.</p>
           <p>3. All AI features (Auto Clip, Viral Scanner, Brainstorm) use your active provider.</p>
-          <p>4. No key? Enable OmniRoute for free models, or use features without AI (heuristic mode).</p>
+          <p>4. No key? Install a local AI server for free models, or use features without AI (heuristic mode).</p>
         </div>
       </Card>
     </div>
