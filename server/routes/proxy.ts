@@ -65,11 +65,12 @@ router.get('/youtube', async (req, res) => {
   try {
     res.setHeader('Content-Type', 'video/mp4');
 
-    // Stream video directly — no info fetch needed
+    // Stream video directly — use Node.js as JS runtime for YouTube signatures
     const proc = spawn(ytDlpPath, [
       '-f', 'best[height<=720]/best',
       '--no-check-certificates',
       '--no-warnings',
+      '--js-runtimes', 'node',
       '--newline',
       '-o', '-',  // output to stdout
       url,
