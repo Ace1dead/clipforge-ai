@@ -23,11 +23,12 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
-    // In production, allow the Render domain and any configured origins
-    if (process.env.NODE_ENV === 'production') {
+    // Always check allowed origins list
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       return callback(null, true);
     }
-    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    // In production, also allow the Render domain
+    if (process.env.NODE_ENV === 'production' && origin.includes('onrender.com')) {
       return callback(null, true);
     }
     return callback(new Error('Not allowed by CORS'));
