@@ -402,3 +402,188 @@ export function getWaveform(buffer: AudioBuffer, buckets = 120): number[] {
   }
   return out
 }
+
+// ─── Beat Detection ────────────────────────────────────────────
+
+export interface BeatInfo {
+  bpm: number
+  beatTimes: number[]
+  tempo: 'slow' | 'mid' | 'fast' | 'very_fast'
+  energyBands: { bass: number; mid: number; treble: number }
+  onsetStrength: number[]
+  confidence: number
+}
+
+/**
+ * Detect beats in an audio buffer using spectral flux onset detection
+ * and autocorrelation-based BPM estimation.
+ */
+export function detectBeats(buffer: AudioBuffer): BeatInfo {
+  const mono = buffer.getChannelData(0)
+  const sr = buffer.sampleRate
+  const N = 2048
+  const hop = 512
+  const win = hann(N)
+  const fft = new FFT(N)
+  const numBins = N / 2 + 1
+
+  // Band boundaries (Hz → bin index)
+  const bassEnd = Math.floor(250 * N / sr)
+  const midEnd = Math.floor(4000 * N / sr)
+
+  // Compute spectral flux per frame
+  const frames = Math.max(1, Math.floor((mono.length - N) / hop))
+  const spectralFlux: number[] = []
+  const bandEnergies: { bass: number; mid: number; treble: number }[] = []
+  let prevMag = new Float32Array(numBins)
+
+  for (let f = 0; f < frames; f++) {
+    const frame = new Float64Array(N)
+    for (let i = 0; i < N; i++) {
+      const idx = f * hop + i
+      frame[i] = idx < mono.length ? mono[idx] * win[i] : 0
+    }
+    const im = new Float64Array(N)
+    fft.forward(frame, im)
+
+    const mag = new Float32Array(numBins)
+    let bass = 0, mid = 0, treble = 0
+    for (let i = 0; i < numBins; i++) {
+      mag[i] = Math.sqrt(frame[i] * frame[i] + im[i] * im[i])
+      if (i < bassEnd) bass += mag[i]
+      else if (i < midEnd) mid += mag[i]
+      else treble += mag[i]
+    }
+
+    // Half-wave rectified spectral flux (only positive changes)
+    let flux = 0
+    for (let i = 0; i < numBins; i++) {
+      const diff = mag[i] - prevMag[i]
+      if (diff > 0) flux += diff
+    }
+    spectralFlux.push(flux)
+    bandEnergies.push({
+      bass: bass / Math.max(1, bassEnd),
+      mid: mid / Math.max(1, midEnd - bassEnd),
+      treble: treble / Math.max(1, numBins - midEnd),
+    })
+    prevMag = mag
+  }
+
+  // Normalize onset strength
+  const maxFlux = Math.max(...spectralFlux, 0.001)
+  for (let i = 0; i < spectralFlux.length; i++) spectralFlux[i] /= maxFlux
+
+  // Adaptive threshold peak picking for beat times
+  const beatTimes = peakPickOnsets(spectralFlux, hop, sr)
+
+  // BPM estimation via autocorrelation
+  const bpm = estimateBPM(spectralFlux, sr, hop)
+
+  // Classify tempo
+  let tempo: BeatInfo['tempo'] = 'mid'
+  if (bpm < 80) tempo = 'slow'
+  else if (bpm < 110) tempo = 'mid'
+  else if (bpm < 140) tempo = 'fast'
+  else tempo = 'very_fast'
+
+  // Average band energies
+  const avgBands = bandEnergies.reduce(
+    (acc, b) => ({ bass: acc.bass + b.bass, mid: acc.mid + b.mid, treble: acc.treble + b.treble }),
+    { bass: 0, mid: 0, treble: 0 }
+  )
+  const n = Math.max(1, bandEnergies.length)
+  const energyBands = { bass: avgBands.bass / n, mid: avgBands.mid / n, treble: avgBands.treble / n }
+
+  // Confidence: how periodic are the detected beats
+  const confidence = beatTimes.length > 2 ? computePeriodicityConfidence(beatTimes) : 0.5
+
+  return { bpm, beatTimes, tempo, energyBands, onsetStrength: spectralFlux, confidence }
+}
+
+/** Peak-pick onsets using adaptive thresholding */
+function peakPickOnsets(flux: number[], hop: number, sr: number): number[] {
+  const beats: number[] = []
+  const windowSize = 16 // ~500ms at typical frame rates
+  const thresholdMult = 1.4
+  const minInterval = Math.floor(sr * 0.3 / hop) // minimum 300ms between beats
+
+  for (let i = windowSize; i < flux.length - 1; i++) {
+    // Local mean over past window
+    let localMean = 0
+    for (let j = Math.max(0, i - windowSize); j < i; j++) localMean += flux[j]
+    localMean /= windowSize
+
+    const threshold = localMean * thresholdMult + 0.02
+    if (flux[i] > threshold && flux[i] > flux[i - 1] && flux[i] >= flux[i + 1]) {
+      const timeSec = (i * hop) / sr
+      if (beats.length === 0 || i - (beats[beats.length - 1] * sr / hop) >= minInterval) {
+        beats.push(timeSec)
+      }
+    }
+  }
+  return beats
+}
+
+/** Estimate BPM via autocorrelation of the onset strength signal */
+function estimateBPM(flux: number[], sr: number, hop: number): number {
+  const minBPM = 60
+  const maxBPM = 180
+  const minLag = Math.floor(60 * sr / (maxBPM * hop))
+  const maxLag = Math.floor(60 * sr / (minBPM * hop))
+
+  let bestCorr = -1
+  let bestLag = minLag
+
+  for (let lag = minLag; lag <= Math.min(maxLag, flux.length - 1); lag++) {
+    let corr = 0
+    let count = 0
+    for (let i = 0; i < flux.length - lag; i++) {
+      corr += flux[i] * flux[i + lag]
+      count++
+    }
+    corr /= Math.max(1, count)
+
+    // Prefer integer multiples (downbeat emphasis)
+    if (lag % 2 === 0) corr *= 1.05
+
+    if (corr > bestCorr) {
+      bestCorr = corr
+      bestLag = lag
+    }
+  }
+
+  const bpm = (60 * sr) / (bestLag * hop)
+  return Math.round(Math.max(minBPM, Math.min(maxBPM, bpm)))
+}
+
+/** Compute how periodic the beat intervals are (0-1) */
+function computePeriodicityConfidence(beatTimes: number[]): number {
+  if (beatTimes.length < 3) return 0.5
+  const intervals: number[] = []
+  for (let i = 1; i < beatTimes.length; i++) intervals.push(beatTimes[i] - beatTimes[i - 1])
+  const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length
+  const variance = intervals.reduce((a, b) => a + (b - mean) ** 2, 0) / intervals.length
+  const cv = Math.sqrt(variance) / Math.max(mean, 0.001) // coefficient of variation
+  return Math.max(0, Math.min(1, 1 - cv)) // lower CV = higher confidence
+}
+
+/** Get beat times nearest to a given time (for UI markers) */
+export function getNearestBeats(beatTimes: number[], time: number, count = 4): number[] {
+  return beatTimes
+    .map(t => ({ t, dist: Math.abs(t - time) }))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, count)
+    .map(b => b.t)
+    .sort((a, b) => a - b)
+}
+
+/** Get the beat energy at a specific time (for triggering effects) */
+export function getBeatIntensity(beatTimes: number[], time: number, decaySec = 0.15): number {
+  let minDist = Infinity
+  for (const bt of beatTimes) {
+    const d = Math.abs(bt - time)
+    if (d < minDist) minDist = d
+  }
+  return Math.max(0, 1 - minDist / decaySec)
+}

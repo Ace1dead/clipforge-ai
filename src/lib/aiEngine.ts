@@ -706,3 +706,309 @@ function averageSlice(arr: number[], start: number, end: number, totalDuration: 
   if (slice.length === 0) return 0.5;
   return slice.reduce((s, v) => s + v, 0) / slice.length;
 }
+
+// ============================================================
+// AI STYLE SELECTION & TIMELINE GENERATION
+// ============================================================
+
+export interface StyleAnalysisInput {
+  duration: number
+  title?: string
+  description?: string
+  audioEnergyProfile?: number[]
+  bpm?: number
+  tempo?: 'slow' | 'mid' | 'fast' | 'very_fast'
+  detectedGenre?: string
+  audioMood?: string
+}
+
+export interface StyleAnalysisResult {
+  primaryStyle: string
+  colorSkin: string
+  justification: string
+  detectedGenre: string
+  dominantAudioMood: string
+  calculatedTempoBPM: number
+}
+
+export interface TimelineEvent {
+  timestampStartMs: number
+  timestampEndMs: number
+  actionType: 'time_remap' | 'cut' | 'shake' | 'exposure_pulse' | 'chromatic_aberration' | 'typography' | 'color_grade' | 'vignette'
+  parameters: Record<string, any>
+}
+
+export interface EditTimeline {
+  analyzedMetadata: {
+    detectedGenre: string
+    dominantAudioMood: string
+    calculatedTempoBPM: number
+  }
+  selectedEditArchitecture: {
+    primaryStyle: string
+    aestheticColorSkin: string
+    styleJustification: string
+  }
+  editExecutionTimeline: TimelineEvent[]
+  youtubeContentSuggestions: {
+    searchString: string
+    purpose: string
+    insertAtMs: number
+  }[]
+}
+
+/**
+ * AI-powered style selection — analyzes video metadata and recommends
+ * the best edit architecture and color skin.
+ */
+export async function selectEditingStyleAI(input: StyleAnalysisInput): Promise<StyleAnalysisResult> {
+  const prompt = `You are an expert AI video editor. Analyze this video and select the best edit style.
+
+Video Info:
+- Duration: ${input.duration}s
+- Title: ${input.title || 'Unknown'}
+- Description: ${input.description || 'None'}
+- BPM: ${input.bpm || 'Unknown'}
+- Tempo: ${input.tempo || 'Unknown'}
+- Audio energy avg: ${input.audioEnergyProfile ? (input.audioEnergyProfile.reduce((a,b)=>a+b,0)/input.audioEnergyProfile.length).toFixed(3) : 'Unknown'}
+
+Available Edit Styles:
+1. Velocity — Speed ramps between beats (for mid-high tempo music, pop/electronic/phonk)
+2. Raw/Impact — Screen shake + exposure pulses on drops (for high-intensity action, rock/metal/phonk)
+3. Flow/Match-Cut — Seamless transitions matching motion vectors (for cinematic/ambient/lofi)
+4. Compositing — Subject isolation with parallax overlay (for cinematic/music-video)
+5. MMV/Kinetic — Manga-style motion with depth layers (for anime/j-pop/j-rock)
+6. Kinetic Typography — 3D text synced to vocals (for hip-hop/rap/pop)
+
+Color Skins:
+- Candy: Pastel, high exposure, dreamy (pop, upbeat)
+- Edgy/Phonk: Crushed shadows, chromatic, dark (phonk, aggressive)
+- LoFi: Warm, desaturated, grain, vintage (lofi, nostalgic)
+- Classic: Neutral, balanced (default)
+
+Respond with JSON:
+{
+  "detectedGenre": "string",
+  "dominantAudioMood": "string",
+  "calculatedTempoBPM": number,
+  "primaryStyle": "Velocity|Raw/Impact|Flow/Match-Cut|Compositing|MMV/Kinetic|Kinetic Typography",
+  "colorSkin": "Candy|Edgy|LoFi|Classic",
+  "justification": "Why this style fits the video"
+}`;
+
+  try {
+    const res = await generateAI({
+      system: 'You are an expert AI video editor and content strategist. Always respond with valid JSON only.',
+      prompt,
+      temperature: 0.3,
+      maxTokens: 500,
+    });
+
+    const parsed = parseStyleResponse(res.text)
+    if (parsed) return parsed
+  } catch {
+    // Fall through to heuristic
+  }
+
+  return heuristicStyleSelection(input)
+}
+
+function parseStyleResponse(text: string): StyleAnalysisResult | null {
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return null
+    const data = JSON.parse(jsonMatch[0])
+    return {
+      primaryStyle: data.primaryStyle || data.primary_style || 'Velocity',
+      colorSkin: data.colorSkin || data.color_skin || data.aesthetic_color_skin || 'Classic',
+      justification: data.justification || data.style_justification || '',
+      detectedGenre: data.detectedGenre || data.detected_genre || 'Unknown',
+      dominantAudioMood: data.dominantAudioMood || data.dominant_audio_mood || 'Unknown',
+      calculatedTempoBPM: data.calculatedTempoBPM || data.calculated_tempo_bpm || 120,
+    }
+  } catch { return null }
+}
+
+function heuristicStyleSelection(input: StyleAnalysisInput): StyleAnalysisResult {
+  const bpm = input.bpm || 120
+  const tempo = input.tempo || 'mid'
+  const avgEnergy = input.audioEnergyProfile
+    ? input.audioEnergyProfile.reduce((a,b)=>a+b,0) / input.audioEnergyProfile.length
+    : 0.5
+
+  let primaryStyle = 'Velocity'
+  let colorSkin = 'Classic'
+
+  if (avgEnergy > 0.6 || tempo === 'fast' || tempo === 'very_fast') {
+    primaryStyle = 'Raw/Impact'
+    colorSkin = 'Edgy'
+  } else if (bpm >= 100 && bpm <= 160) {
+    primaryStyle = 'Velocity'
+    colorSkin = 'Candy'
+  } else if (tempo === 'slow') {
+    primaryStyle = 'Flow/Match-Cut'
+    colorSkin = 'LoFi'
+  } else {
+    primaryStyle = 'Kinetic Typography'
+    colorSkin = 'Classic'
+  }
+
+  return {
+    primaryStyle,
+    colorSkin,
+    justification: `Heuristic selection based on BPM=${bpm}, tempo=${tempo}, energy=${avgEnergy.toFixed(2)}`,
+    detectedGenre: input.detectedGenre || 'Unknown',
+    dominantAudioMood: input.audioMood || 'Unknown',
+    calculatedTempoBPM: bpm,
+  }
+}
+
+/**
+ * Generate a full edit timeline with frame-by-frame events.
+ */
+export function generateEditTimeline(
+  duration: number,
+  beatTimes: number[],
+  bpm: number,
+  style: { primaryStyle: string; colorSkin: string },
+  audioEnergyProfile?: number[]
+): EditTimeline {
+  const events: TimelineEvent[] = []
+  const beatInterval = 60 / bpm * 1000 // ms
+
+  for (let i = 0; i < beatTimes.length; i++) {
+    const tMs = beatTimes[i] * 1000
+    const nextMs = i < beatTimes.length - 1 ? beatTimes[i + 1] * 1000 : tMs + beatInterval
+
+    // Velocity: speed ramp
+    if (style.primaryStyle === 'Velocity') {
+      events.push({
+        timestampStartMs: tMs,
+        timestampEndMs: tMs + 120,
+        actionType: 'time_remap',
+        parameters: { speed: 0.25, curve: 'ease-in' },
+      })
+      events.push({
+        timestampStartMs: tMs + 120,
+        timestampEndMs: nextMs,
+        actionType: 'time_remap',
+        parameters: { speed: 3.5, curve: 'ease-out' },
+      })
+    }
+
+    // Raw/Impact: shake + flash on beat
+    if (style.primaryStyle === 'Raw/Impact') {
+      events.push({
+        timestampStartMs: tMs,
+        timestampEndMs: tMs + 150,
+        actionType: 'shake',
+        parameters: { intensity: 1.2, frequency: 35 },
+      })
+      events.push({
+        timestampStartMs: tMs,
+        timestampEndMs: tMs + 120,
+        actionType: 'exposure_pulse',
+        parameters: { stops: 1.5, decayFrames: 4 },
+      })
+    }
+
+    // MMV: shake + glitch on beat
+    if (style.primaryStyle === 'MMV/Kinetic') {
+      events.push({
+        timestampStartMs: tMs,
+        timestampEndMs: tMs + 80,
+        actionType: 'shake',
+        parameters: { intensity: 0.4, frequency: 20 },
+      })
+      events.push({
+        timestampStartMs: tMs,
+        timestampEndMs: tMs + 60,
+        actionType: 'chromatic_aberration',
+        parameters: { offset: 2.5 },
+      })
+    }
+
+    // Kinetic Typography: text event on beat
+    if (style.primaryStyle === 'Kinetic Typography') {
+      events.push({
+        timestampStartMs: tMs,
+        timestampEndMs: tMs + 300,
+        actionType: 'typography',
+        parameters: { scale: 1.5, animation: 'bounce', syncTo: 'beat' },
+      })
+    }
+  }
+
+  // Global color grade
+  events.push({
+    timestampStartMs: 0,
+    timestampEndMs: duration * 1000,
+    actionType: 'color_grade',
+    parameters: { skin: style.colorSkin },
+  })
+
+  // Vignette throughout
+  events.push({
+    timestampStartMs: 0,
+    timestampEndMs: duration * 1000,
+    actionType: 'vignette',
+    parameters: { strength: 0.25, radius: 0.65 },
+  })
+
+  // Generate YouTube content suggestions
+  const suggestions = generateYouTubeSuggestions(style.primaryStyle, duration, beatTimes)
+
+  return {
+    analyzedMetadata: {
+      detectedGenre: style.primaryStyle,
+      dominantAudioMood: style.colorSkin,
+      calculatedTempoBPM: bpm,
+    },
+    selectedEditArchitecture: {
+      primaryStyle: style.primaryStyle,
+      aestheticColorSkin: style.colorSkin,
+      styleJustification: `Auto-selected based on ${beatTimes.length} beats at ${bpm} BPM`,
+    },
+    editExecutionTimeline: events.sort((a, b) => a.timestampStartMs - b.timestampStartMs),
+    youtubeContentSuggestions: suggestions,
+  }
+}
+
+function generateYouTubeSuggestions(
+  style: string,
+  duration: number,
+  beatTimes: number[]
+): EditTimeline['youtubeContentSuggestions'] {
+  const suggestions: EditTimeline['youtubeContentSuggestions'] = []
+
+  if (style === 'Velocity' || style === 'Raw/Impact') {
+    suggestions.push({
+      searchString: 'glitch overlay green screen transparent',
+      purpose: 'Overlay transition element',
+      insertAtMs: beatTimes.length > 0 ? beatTimes[Math.floor(beatTimes.length / 2)] * 1000 : 0,
+    })
+    suggestions.push({
+      searchString: 'particle effects overlay black background',
+      purpose: 'B-roll enhancement',
+      insertAtMs: duration * 500,
+    })
+  }
+
+  if (style === 'Flow/Match-Cut') {
+    suggestions.push({
+      searchString: 'cinematic landscape slow motion 4k',
+      purpose: 'B-roll enhancement',
+      insertAtMs: duration * 300,
+    })
+  }
+
+  if (style === 'MMV/Kinetic') {
+    suggestions.push({
+      searchString: 'anime style flash frame overlay',
+      purpose: 'Overlay transition element',
+      insertAtMs: beatTimes.length > 2 ? beatTimes[2] * 1000 : 0,
+    })
+  }
+
+  return suggestions
+}
