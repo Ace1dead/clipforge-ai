@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { initDb } from './db.js';
 import authRoutes from './routes/auth.js';
@@ -72,12 +73,25 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Serve Vite build in production
-const distPath = path.resolve(process.cwd(), 'dist');
-console.log('Serving static from:', distPath);
-app.use(express.static(distPath));
-app.get('/{*splat}', (_req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
-});
+const possiblePaths = [
+  path.resolve(process.cwd(), 'dist'),
+  path.resolve(__dirname, '../dist'),
+  path.resolve(__dirname, '../../dist'),
+  '/opt/render/project/src/dist',
+];
+const distPath = possiblePaths.find(p => fs.existsSync(p + '/index.html')) || possiblePaths[0];
+console.log('Serving frontend from:', distPath, 'exists:', fs.existsSync(distPath + '/index.html'));
+if (fs.existsSync(distPath + '/index.html')) {
+  app.use(express.static(distPath));
+  app.get('/{*splat}', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+} else {
+  console.error('Frontend build not found. Checked:', possiblePaths);
+  app.get('/', (_req, res) => {
+    res.status(500).json({ error: 'Frontend not built', checked: possiblePaths });
+  });
+}
 
 // Initialize database then start server
 initDb().then(() => {
