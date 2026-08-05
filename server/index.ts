@@ -35,6 +35,13 @@ app.use(cors({
   credentials: true,
 }));
 
+// COOP/COEP headers for SharedArrayBuffer (required by ffmpeg.wasm multi-thread, browser-whisper)
+app.use((_req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+  next()
+})
+
 app.use(express.json({ limit: '10mb' }));
 
 // Simple rate limiting middleware
