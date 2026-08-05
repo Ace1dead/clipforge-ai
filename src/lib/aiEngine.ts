@@ -1012,3 +1012,171 @@ function generateYouTubeSuggestions(
 
   return suggestions
 }
+
+// ============================================================
+// AI SCRIPT GENERATOR
+// ============================================================
+
+export interface ScriptRequest {
+  topic: string
+  platform?: 'tiktok' | 'reels' | 'shorts' | 'youtube' | 'general'
+  style?: 'viral' | 'educational' | 'entertaining' | 'emotional' | 'promotional'
+  duration?: number // target duration in seconds
+  tone?: string
+}
+
+export interface ScriptLine {
+  text: string
+  startSec: number
+  endSec: number
+  emphasis?: 'normal' | 'shout' | 'whisper' | 'question'
+  emotion?: string
+}
+
+export interface ScriptResult {
+  lines: ScriptLine[]
+  fullText: string
+  hooks: string[]
+  cta: string
+  hashtags: string[]
+}
+
+/**
+ * AI-powered script generator — creates caption scripts from a topic.
+ */
+export async function generateScriptAI(request: ScriptRequest): Promise<ScriptResult> {
+  const { topic, platform = 'general', style = 'viral', duration = 30, tone } = request
+
+  const prompt = `You are an expert short-form video scriptwriter. Generate a script for:
+
+Topic: ${topic}
+Platform: ${platform}
+Style: ${style}
+Target Duration: ${duration} seconds${tone ? `\nTone: ${tone}` : ''}
+
+Requirements:
+- Short, punchy sentences (max 8 words each)
+- Hook viewers in the first 2 seconds
+- Include emotional triggers
+- End with a strong call-to-action
+- Each line should be one caption/phrase
+
+Respond with JSON:
+{
+  "lines": [
+    { "text": "string", "emphasis": "normal|shout|whisper|question", "emotion": "string" }
+  ],
+  "hooks": ["3 powerful hook options"],
+  "cta": "call to action text",
+  "hashtags": ["relevant", "hashtags"]
+}`;
+
+  try {
+    const res = await generateAI({
+      system: 'You are an expert short-form video scriptwriter. Always respond with valid JSON only.',
+      prompt,
+      temperature: 0.7,
+      maxTokens: 800,
+    })
+
+    const parsed = parseScriptResponse(res.text, duration)
+    if (parsed) return parsed
+  } catch {
+    // Fall through to heuristic
+  }
+
+  return heuristicScript(request)
+}
+
+function parseScriptResponse(text: string, duration: number): ScriptResult | null {
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return null
+    const data = JSON.parse(jsonMatch[0])
+
+    const lines: ScriptLine[] = (data.lines || []).map((l: any, i: number, arr: ScriptLine[]) => {
+      const lineDuration = duration / Math.max(arr.length, 1)
+      return {
+        text: l.text || l,
+        startSec: i * lineDuration,
+        endSec: (i + 1) * lineDuration,
+        emphasis: l.emphasis || 'normal',
+        emotion: l.emotion || '',
+      }
+    })
+
+    const fullText = lines.map(l => l.text).join(' ')
+
+    return {
+      lines,
+      fullText,
+      hooks: data.hooks || [],
+      cta: data.cta || '',
+      hashtags: data.hashtags || [],
+    }
+  } catch { return null }
+}
+
+function heuristicScript(request: ScriptRequest): ScriptResult {
+  const { topic, platform = 'general', style = 'viral', duration = 30 } = request
+
+  const hooks: Record<string, string[]> = {
+    viral: [
+      `You won't believe what happens with ${topic}...`,
+      `This changed everything about ${topic}.`,
+      `Nobody talks about ${topic} but...`,
+    ],
+    educational: [
+      `Here's what nobody tells you about ${topic}.`,
+      `Let me explain ${topic} in 30 seconds.`,
+      `${topic} — the truth they don't want you to know.`,
+    ],
+    entertaining: [
+      `POV: You just discovered ${topic}.`,
+      `When ${topic} hits different...`,
+      `${topic} but make it chaotic.`,
+    ],
+    emotional: [
+      `This ${topic} moment broke me.`,
+      `If you've ever felt ${topic}... this is for you.`,
+      `The ${topic} story nobody expected.`,
+    ],
+    promotional: [
+      `Stop scrolling — ${topic} is here.`,
+      `The ${topic} game-changer you need.`,
+      `${topic} — join the movement.`,
+    ],
+  }
+
+  const lines: ScriptLine[] = []
+  const allHooks = hooks[style] || hooks.viral
+  const lineCount = Math.floor(duration / 5)
+
+  // Hook
+  lines.push({ text: allHooks[0], startSec: 0, endSec: 4, emphasis: 'shout', emotion: 'excitement' })
+
+  // Body
+  const bodyPhrases = [
+    `Here's the thing about ${topic}...`,
+    `Most people get this wrong.`,
+    `But when you understand it...`,
+    `Everything changes.`,
+    `And that's why ${topic} matters.`,
+  ]
+  for (let i = 0; i < Math.min(lineCount - 2, bodyPhrases.length); i++) {
+    const t = 4 + i * 4
+    lines.push({ text: bodyPhrases[i], startSec: t, endSec: t + 4, emphasis: 'normal', emotion: 'curiosity' })
+  }
+
+  // CTA
+  const ctaText = `Follow for more ${topic} content!`
+  lines.push({ text: ctaText, startSec: duration - 4, endSec: duration, emphasis: 'shout', emotion: 'excitement' })
+
+  return {
+    lines,
+    fullText: lines.map(l => l.text).join(' '),
+    hooks: allHooks,
+    cta: ctaText,
+    hashtags: [topic.replace(/\s+/g, ''), 'fyp', 'viral', 'trending'],
+  }
+}

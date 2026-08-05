@@ -32,6 +32,8 @@ export function Editor() {
   const [tab, setTab] = useState('media')
   const [mobilePanel, setMobilePanel] = useState(false)
   const [script, setScript] = useState(SAMPLE_SCRIPT)
+  const [aiScriptTopic, setAiScriptTopic] = useState('')
+  const [generatingScript, setGeneratingScript] = useState(false)
   const [voice, setVoice] = useState('Brian')
   const [time, setTime] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -60,6 +62,29 @@ export function Editor() {
   }, [res])
 
   const update = (patch: Partial<Project>) => setProject((p) => (p ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p))
+
+  const generateScript = async () => {
+    if (!aiScriptTopic.trim()) return
+    setGeneratingScript(true)
+    try {
+      const { generateScriptAI } = await import('../lib/aiEngine')
+      const result = await generateScriptAI({
+        topic: aiScriptTopic.trim(),
+        platform: res === '9:16' ? 'tiktok' : 'youtube',
+        style: 'viral',
+        duration: project?.duration || 30,
+      })
+      setScript(result.fullText)
+      if (result.lines.length > 0) {
+        autoCaption(project?.duration || 30, result.fullText)
+      }
+      toast('success', 'Script generated', `${result.lines.length} lines, ${result.hashtags.length} hashtags`)
+    } catch (e) {
+      toast('error', 'Script generation failed', e instanceof Error ? e.message : undefined)
+    } finally {
+      setGeneratingScript(false)
+    }
+  }
 
   const autoCaption = (dur: number, text: string) => {
     const timed = estimateWordTiming(text || SAMPLE_SCRIPT, dur)
@@ -220,6 +245,32 @@ export function Editor() {
 
         {tab === 'captions' && (
           <div className="space-y-3">
+            {/* AI Script Generator */}
+            <div className="bg-accent/5 border border-accent/20 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles size={14} className="text-accent" />
+                <span className="text-[12px] font-semibold text-accent">AI Script Generator</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={aiScriptTopic}
+                  onChange={(e) => setAiScriptTopic(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && aiScriptTopic.trim()) generateScript() }}
+                  placeholder="Enter topic (e.g., 'cooking tips')"
+                  className="flex-1 bg-elevated border border-white/10 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:border-accent/40"
+                />
+                <Button
+                  size="sm"
+                  icon={<Sparkles size={12} />}
+                  loading={generatingScript}
+                  onClick={generateScript}
+                  disabled={!aiScriptTopic.trim()}
+                >
+                  Generate
+                </Button>
+              </div>
+            </div>
+
             <Field label="Script">
               <Textarea rows={7} value={script} onChange={(e) => setScript(e.target.value)} />
             </Field>
