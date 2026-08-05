@@ -2,115 +2,216 @@ import { Router } from 'express';
 
 const router = Router();
 
+// All supported providers with their API details
+const PROVIDERS: Record<string, {
+  envKey: string;
+  baseUrl: string;
+  defaultModel: string;
+  headerKey: string;
+  headerStyle: 'bearer' | 'x-api-key' | 'authorization';
+  transformBody: (body: any) => any;
+  extractContent: (data: any) => string;
+  extractModel: (data: any) => string;
+}> = {
+  openai: {
+    envKey: 'OPENAI_API_KEY',
+    baseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+    headerKey: 'Authorization',
+    headerStyle: 'bearer',
+    transformBody: (b) => ({ model: b.model, messages: b.messages, max_tokens: b.max_tokens, temperature: b.temperature }),
+    extractContent: (d) => d.choices?.[0]?.message?.content ?? '',
+    extractModel: (d) => d.model ?? '',
+  },
+  anthropic: {
+    envKey: 'ANTHROPIC_API_KEY',
+    baseUrl: 'https://api.anthropic.com/v1',
+    defaultModel: 'claude-3-5-haiku-20241022',
+    headerKey: 'x-api-key',
+    headerStyle: 'x-api-key',
+    transformBody: (b) => {
+      const system = b.messages.find((m: any) => m.role === 'system')?.content ?? '';
+      const msgs = b.messages.filter((m: any) => m.role !== 'system');
+      return { model: b.model, max_tokens: b.max_tokens, temperature: b.temperature, system, messages: msgs };
+    },
+    extractContent: (d) => d.content?.[0]?.text ?? '',
+    extractModel: (d) => d.model ?? '',
+  },
+  google: {
+    envKey: 'GOOGLE_AI_API_KEY',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-2.0-flash',
+    headerKey: 'x-goog-api-key',
+    headerStyle: 'x-api-key',
+    transformBody: (b) => ({
+      contents: b.messages.filter((m: any) => m.role !== 'system').map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      })),
+      generationConfig: { maxOutputTokens: b.max_tokens, temperature: b.temperature },
+      systemInstruction: b.messages.find((m: any) => m.role === 'system') ? { parts: [{ text: b.messages.find((m: any) => m.role === 'system')?.content }] } : undefined,
+    }),
+    extractContent: (d) => d.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
+    extractModel: (d) => d.modelVersion ?? '',
+  },
+  mistral: {
+    envKey: 'MISTRAL_API_KEY',
+    baseUrl: 'https://api.mistral.ai/v1',
+    defaultModel: 'mistral-small-latest',
+    headerKey: 'Authorization',
+    headerStyle: 'bearer',
+    transformBody: (b) => ({ model: b.model, messages: b.messages, max_tokens: b.max_tokens, temperature: b.temperature }),
+    extractContent: (d) => d.choices?.[0]?.message?.content ?? '',
+    extractModel: (d) => d.model ?? '',
+  },
+  groq: {
+    envKey: 'GROQ_API_KEY',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.1-8b-instant',
+    headerKey: 'Authorization',
+    headerStyle: 'bearer',
+    transformBody: (b) => ({ model: b.model, messages: b.messages, max_tokens: b.max_tokens, temperature: b.temperature }),
+    extractContent: (d) => d.choices?.[0]?.message?.content ?? '',
+    extractModel: (d) => d.model ?? '',
+  },
+  cohere: {
+    envKey: 'COHERE_API_KEY',
+    baseUrl: 'https://api.cohere.com/v2',
+    defaultModel: 'command-r-plus',
+    headerKey: 'Authorization',
+    headerStyle: 'bearer',
+    transformBody: (b) => ({
+      model: b.model,
+      messages: b.messages.map((m: any) => ({ role: m.role === 'assistant' ? 'CHATBOT' : 'USER', content: m.content })),
+      max_tokens: b.max_tokens,
+      temperature: b.temperature,
+    }),
+    extractContent: (d) => d.message?.content?.[0]?.text ?? '',
+    extractModel: (d) => d.model ?? '',
+  },
+  deepseek: {
+    envKey: 'DEEPSEEK_API_KEY',
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
+    headerKey: 'Authorization',
+    headerStyle: 'bearer',
+    transformBody: (b) => ({ model: b.model, messages: b.messages, max_tokens: b.max_tokens, temperature: b.temperature }),
+    extractContent: (d) => d.choices?.[0]?.message?.content ?? '',
+    extractModel: (d) => d.model ?? '',
+  },
+  together: {
+    envKey: 'TOGETHER_API_KEY',
+    baseUrl: 'https://api.together.xyz/v1',
+    defaultModel: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+    headerKey: 'Authorization',
+    headerStyle: 'bearer',
+    transformBody: (b) => ({ model: b.model, messages: b.messages, max_tokens: b.max_tokens, temperature: b.temperature }),
+    extractContent: (d) => d.choices?.[0]?.message?.content ?? '',
+    extractModel: (d) => d.model ?? '',
+  },
+};
+
+function getHeaders(provider: typeof PROVIDERS[string], apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (provider.headerStyle === 'bearer') {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  } else if (provider.headerStyle === 'x-api-key') {
+    headers[provider.headerKey] = apiKey;
+  } else {
+    headers[provider.headerKey] = apiKey;
+  }
+  if (provider.envKey === 'ANTHROPIC_API_KEY') {
+    headers['anthropic-version'] = '2023-06-01';
+  }
+  return headers;
+}
+
+function getApiUrl(provider: typeof PROVIDERS[string], model: string): string {
+  if (provider.envKey === 'GOOGLE_AI_API_KEY') {
+    return `${provider.baseUrl}/models/${model}:generateContent`;
+  }
+  return `${provider.baseUrl}/chat/completions`;
+}
+
 interface AIRequestBody {
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   maxTokens?: number;
   temperature?: number;
-  provider?: 'openai' | 'anthropic' | 'auto';
+  provider?: string;
 }
 
 router.post('/generate', async (req, res) => {
   try {
-    const { messages, maxTokens = 1000, temperature = 0.7, provider = 'auto' }: AIRequestBody = req.body;
+    const { messages, maxTokens = 1000, temperature = 0.7, provider: requestedProvider }: AIRequestBody = req.body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       res.status(400).json({ error: 'messages array is required' });
       return;
     }
 
-    // Determine which provider to use based on available env vars
-    const openaiKey = process.env.OPENAI_API_KEY;
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    // Find available providers (those with env vars set)
+    const available: { key: string; provider: typeof PROVIDERS[string]; apiKey: string }[] = [];
 
-    let useProvider: string;
-    let apiKey: string;
-
-    if (provider === 'openai' && openaiKey) {
-      useProvider = 'openai';
-      apiKey = openaiKey;
-    } else if (provider === 'anthropic' && anthropicKey) {
-      useProvider = 'anthropic';
-      apiKey = anthropicKey;
-    } else if (openaiKey) {
-      useProvider = 'openai';
-      apiKey = openaiKey;
-    } else if (anthropicKey) {
-      useProvider = 'anthropic';
-      apiKey = anthropicKey;
+    if (requestedProvider && PROVIDERS[requestedProvider]) {
+      const key = process.env[PROVIDERS[requestedProvider].envKey];
+      if (key) available.push({ key: requestedProvider, provider: PROVIDERS[requestedProvider], apiKey: key });
     } else {
+      for (const [key, prov] of Object.entries(PROVIDERS)) {
+        const apiKey = process.env[prov.envKey];
+        if (apiKey) available.push({ key, provider: prov, apiKey });
+      }
+    }
+
+    if (available.length === 0) {
+      const envKeys = Object.values(PROVIDERS).map(p => p.envKey);
       res.status(503).json({
-        error: 'No AI provider configured on server. Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variables.',
+        error: `No AI providers configured. Set at least one: ${envKeys.join(', ')}`,
       });
       return;
     }
 
-    let content: string;
-    let model: string;
+    // Try each available provider
+    let lastError = '';
+    for (const { key, provider, apiKey } of available) {
+      try {
+        const model = requestedProvider === key ? (req.body.model || provider.defaultModel) : provider.defaultModel;
+        const url = getApiUrl(provider, model);
+        const headers = getHeaders(provider, apiKey);
+        const body = provider.transformBody({ ...req.body, model });
 
-    if (useProvider === 'openai') {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages,
-          max_tokens: maxTokens,
-          temperature,
-        }),
-        signal: AbortSignal.timeout(60000),
-      });
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(60000),
+        });
 
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        res.status(response.status).json({ error: `OpenAI API error: ${text.slice(0, 200)}` });
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          lastError = `${key}: ${response.status} ${text.slice(0, 100)}`;
+          continue;
+        }
+
+        const data = await response.json();
+        const content = provider.extractContent(data);
+        if (!content) {
+          lastError = `${key}: empty response`;
+          continue;
+        }
+
+        res.json({
+          content,
+          model: provider.extractModel(data) || model,
+          provider: key,
+          tokensUsed: data.usage?.total_tokens ?? 0,
+        });
         return;
+      } catch (e) {
+        lastError = `${key}: ${e instanceof Error ? e.message : String(e)}`;
       }
-
-      const data = await response.json();
-      content = data.choices?.[0]?.message?.content ?? '';
-      model = data.model ?? 'gpt-4o-mini';
-    } else {
-      // Anthropic
-      const systemMessage = messages.find(m => m.role === 'system')?.content ?? '';
-      const nonSystemMessages = messages.filter(m => m.role !== 'system');
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
-          max_tokens: maxTokens,
-          temperature,
-          system: systemMessage,
-          messages: nonSystemMessages.map(m => ({ role: m.role, content: m.content })),
-        }),
-        signal: AbortSignal.timeout(60000),
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        res.status(response.status).json({ error: `Anthropic API error: ${text.slice(0, 200)}` });
-        return;
-      }
-
-      const data = await response.json();
-      content = data.content?.[0]?.text ?? '';
-      model = data.model ?? 'claude-3-5-haiku-20241022';
     }
 
-    res.json({
-      content,
-      model,
-      provider: useProvider,
-      tokensUsed: 0,
-    });
+    res.status(502).json({ error: `All providers failed. Last: ${lastError}` });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('AI proxy error:', msg);
@@ -119,14 +220,13 @@ router.post('/generate', async (req, res) => {
 });
 
 router.get('/status', (_req, res) => {
-  const hasOpenAI = !!process.env.OPENAI_API_KEY;
-  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+  const configured: Record<string, boolean> = {};
+  for (const [key, prov] of Object.entries(PROVIDERS)) {
+    configured[key] = !!process.env[prov.envKey];
+  }
   res.json({
-    configured: hasOpenAI || hasAnthropic,
-    providers: {
-      openai: hasOpenAI,
-      anthropic: hasAnthropic,
-    },
+    configured: Object.values(configured).some(v => v),
+    providers: configured,
   });
 });
 
