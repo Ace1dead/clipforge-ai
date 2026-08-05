@@ -49,6 +49,7 @@ export function AutoClip() {
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
 
   const [exportingClipId, setExportingClipId] = useState<string | null>(null)
+  const [exportingAll, setExportingAll] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
 
   const [captionStyles, setCaptionStyles] = useState<Record<string, string>>({})
@@ -290,6 +291,39 @@ export function AutoClip() {
     }
   }, [videoUrl, captionStyles, wordTimestamps])
 
+  const exportAllClips = useCallback(async () => {
+    if (!videoUrl || clips.length === 0) return
+    setExportingAll(true)
+    let exported = 0
+    for (const clip of clips) {
+      try {
+        const captionStyleId = captionStyles[clip.id] || clip.captionStyle || 'pop-classic'
+        const timedWords = toTimedWords(wordTimestamps)
+        const blob = await renderComposition({
+          sources: [{ url: videoUrl, fit: 'cover' }],
+          outW: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1080 : 1920,
+          outH: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1920 : 1080,
+          trim: { start: clip.start, end: clip.end },
+          draw: (ctx, time, w, h) => {
+            if (time < 0.5) { ctx.fillStyle = `rgba(0,0,0,${1 - time * 2})`; ctx.fillRect(0, 0, w, h) }
+            else if (time > (clip.end - clip.start) - 0.5) { ctx.fillStyle = `rgba(0,0,0,${(time - ((clip.end - clip.start) - 0.5)) * 2})`; ctx.fillRect(0, 0, w, h) }
+            const grad = ctx.createLinearGradient(0, 0, 0, h)
+            grad.addColorStop(0, 'rgba(0,0,0,0.15)')
+            grad.addColorStop(1, 'rgba(0,0,0,0.3)')
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h)
+            if (timedWords.length > 0) drawCaptions(ctx, timedWords, getStyle(captionStyleId), time, w, h)
+          },
+          muteVideoAudio: false,
+        })
+        const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
+        downloadBlob(blob, `${clip.title.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`)
+        exported++
+      } catch { /* skip failed clip */ }
+    }
+    setExportingAll(false)
+    toast('success', `Exported ${exported}/${clips.length} clips`)
+  }, [videoUrl, clips, captionStyles, wordTimestamps])
+
   const openInEditor = useCallback((clip: ClipResult) => {
     if (!videoUrl) return
     // Store clip data in localStorage for Editor to pick up
@@ -506,9 +540,20 @@ export function AutoClip() {
                   Score: {analysis.totalScore}/100 ({getGrade(analysis.totalScore)})
                 </span>
               </h3>
-              <Button variant="secondary" size="sm" icon={<Scissors size={14} />} onClick={resetToStart}>
-                New Video
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<Download size={14} />}
+                  loading={exportingAll}
+                  onClick={exportAllClips}
+                >
+                  Export All ({clips.length})
+                </Button>
+                <Button variant="secondary" size="sm" icon={<Scissors size={14} />} onClick={resetToStart}>
+                  New Video
+                </Button>
+              </div>
             </div>
 
             {/* Clip Preview */}
