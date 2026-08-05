@@ -1,9 +1,6 @@
 /**
- * AI Service Layer - Integrates with OmniRoute for free model access
- * with automatic fallback when quotas are exhausted.
- * 
- * OmniRoute provides access to 290+ providers with 90+ free tiers.
- * When one model's quota is exhausted, it automatically falls back to the next.
+ * AI Service Layer
+ * Fallback chain: Server proxy → Client providers → OmniRoute → Suggest install
  */
 
 export interface AIProvider {
@@ -105,36 +102,54 @@ export function removeCustomProvider(providerId: string): void {
 }
 
 /**
- * Generate content using the configured AI provider.
- * Automatically falls back through enabled providers if one fails.
+ * Check if server has AI keys configured.
  */
-export async function generateAI(request: AIRequest): Promise<AIResponse> {
-  const enabledProviders = currentSettings.providers
-    .filter(p => p.enabled)
-    .sort((a, b) => a.priority - b.priority);
-
-  if (enabledProviders.length === 0) {
-    throw new Error('No AI providers enabled. Configure one in Settings.');
+export async function checkServerAIStatus(): Promise<{
+  configured: boolean;
+  providers: { openai: boolean; anthropic: boolean };
+}> {
+  try {
+    const res = await fetch('/api/ai/status', { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return { configured: false, providers: { openai: false, anthropic: false } };
+    return await res.json();
+  } catch {
+    return { configured: false, providers: { openai: false, anthropic: false } };
   }
-
-  let lastError: Error | null = null;
-
-  for (const provider of enabledProviders) {
-    try {
-      const response = await callProvider(provider, request);
-      return response;
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-      console.warn(`AI provider ${provider.name} failed:`, lastError.message);
-      // Continue to next provider
-    }
-  }
-
-  throw new Error(
-    `All AI providers failed. Last error: ${lastError?.message ?? 'Unknown error'}`
-  );
 }
 
+/**
+ * Call the server-side AI proxy (uses env vars).
+ */
+async function callServerProxy(request: AIRequest): Promise<AIResponse> {
+  const res = await fetch('/api/ai/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: request.messages,
+      maxTokens: request.maxTokens ?? 1000,
+      temperature: request.temperature ?? 0.7,
+      provider: 'auto',
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(data.error ?? `Server AI proxy error ${res.status}`);
+  }
+
+  const data = await res.json();
+  return {
+    content: data.content ?? '',
+    model: data.model ?? 'unknown',
+    provider: `Server ${data.provider}`,
+    tokensUsed: data.tokensUsed ?? 0,
+  };
+}
+
+/**
+ * Call a client-side provider directly.
+ */
 async function callProvider(
   provider: AIProvider,
   request: AIRequest
@@ -181,6 +196,55 @@ async function callProvider(
 }
 
 /**
+ * Generate content using the best available AI.
+ * Fallback chain: Server proxy → Client providers → OmniRoute → Error with suggestion
+ */
+export async function generateAI(request: AIRequest): Promise<AIResponse> {
+  // 1. Try server proxy first (uses env vars, no user config needed)
+  try {
+    const serverStatus = await checkServerAIStatus();
+    if (serverStatus.configured) {
+      return await callServerProxy(request);
+    }
+  } catch {
+    // Server proxy unavailable, continue to client providers
+  }
+
+  // 2. Try client-side providers with API keys
+  const enabledProviders = currentSettings.providers
+    .filter(p => p.enabled && p.apiKey && p.type !== 'omniroute')
+    .sort((a, b) => a.priority - b.priority);
+
+  for (const provider of enabledProviders) {
+    try {
+      return await callProvider(provider, request);
+    } catch (e) {
+      console.warn(`AI provider ${provider.name} failed:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  // 3. Try OmniRoute (free, local)
+  if (currentSettings.useOmniRoute) {
+    try {
+      const omniProvider = currentSettings.providers.find(p => p.type === 'omniroute' && p.enabled);
+      if (omniProvider) {
+        return await callProvider(omniProvider, request);
+      }
+    } catch {
+      // OmniRoute unavailable
+    }
+  }
+
+  // 4. Nothing available — throw with suggestions
+  throw new Error(
+    'No AI available. Options:\n' +
+    '• Set OPENAI_API_KEY or ANTHROPIC_API_KEY on the server (Render dashboard → Environment)\n' +
+    '• Add your own API key in AI Settings\n' +
+    '• Install OmniRoute locally for free models: https://github.com/paradite/omniroute'
+  );
+}
+
+/**
  * Check if OmniRoute is running and available.
  */
 export async function checkOmniRouteStatus(): Promise<{
@@ -197,8 +261,8 @@ export async function checkOmniRouteStatus(): Promise<{
     return {
       available: true,
       providers: data.data?.length ?? 0,
-      freeModels: data.data?.filter((m: any) => 
-        m.id?.includes('free') || 
+      freeModels: data.data?.filter((m: any) =>
+        m.id?.includes('free') ||
         m.id?.includes('oc/') ||
         m.id?.includes('felo/')
       ).length ?? 0,

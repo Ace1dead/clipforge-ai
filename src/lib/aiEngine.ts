@@ -4,7 +4,7 @@
  * Uses OmniRoute for free LLM access with auto-fallback.
  */
 
-import { generateAI, getAISettings, type AIResponse } from './aiService';
+import { generateAI } from './aiService';
 
 // ============================================================
 // TYPES
@@ -144,22 +144,19 @@ Transcript: ${transcript || 'No transcript available'}
 
 Provide full JSON analysis with segments, hooks, moments, and suggestions.`;
 
-  const settings = getAISettings();
-  if (settings.useOmniRoute) {
-    try {
-      const response = await generateAI({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxTokens: 3000,
-        temperature: 0.7,
-      });
+  try {
+    const response = await generateAI({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      maxTokens: 3000,
+      temperature: 0.7,
+    });
 
-      return parseAnalysisResponse(response.content, duration, input.audioEnergyProfile);
-    } catch {
-      // AI failed — fall through to heuristic analysis
-    }
+    return parseAnalysisResponse(response.content, duration, input.audioEnergyProfile);
+  } catch {
+    // AI failed — fall through to heuristic analysis
   }
 
   return generateHeuristicAnalysis(duration, input.audioEnergyProfile);
@@ -523,22 +520,19 @@ ${input.transcript ? `Transcript: ${input.transcript.slice(0, 300)}` : ''}
 
 Create a complete viral content package.`;
 
-  const settings = getAISettings();
-  if (settings.useOmniRoute) {
-    try {
-      const response = await generateAI({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxTokens: 1500,
-        temperature: 0.9,
-      });
+  try {
+    const response = await generateAI({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      maxTokens: 1500,
+      temperature: 0.9,
+    });
 
-      return parseContentPackage(response.content, platform, duration);
-    } catch {
-      // AI failed — fall through to fallback
-    }
+    return parseContentPackage(response.content, platform, duration);
+  } catch {
+    // AI failed — fall through to fallback
   }
 
   return generateFallbackPackage(clipTitle, platform, duration);
@@ -662,23 +656,20 @@ Duration: ${formatTime(input.duration)}
 
 Provide detailed scoring and improvements.`;
 
-  const settings = getAISettings();
-  if (settings.useOmniRoute) {
-    try {
-      const response = await generateAI({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxTokens: 1000,
-        temperature: 0.5,
-      });
+  try {
+    const response = await generateAI({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      maxTokens: 1000,
+      temperature: 0.5,
+    });
 
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    } catch {
-      // AI failed — fall through to default
-    }
+    const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+  } catch {
+    // AI failed — fall through to default
   }
 
   return {

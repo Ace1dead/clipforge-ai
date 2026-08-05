@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Brain, Copy, Sparkles, Wand2, Lightbulb, Zap } from 'lucide-react'
 import { Button, Card, Input, Textarea, Badge, toast } from '../components/ui'
-import { getAISettings, generateAI } from '../lib/aiService'
+import { generateAI } from '../lib/aiService'
 
 interface Hook {
   text: string
@@ -29,8 +29,7 @@ export function Brainstorm() {
     }
     setLoading(true)
     try {
-      const settings = getAISettings()
-      if (aiMode && settings.useOmniRoute) {
+      if (aiMode) {
         const prompt = `Generate ${count} viral ${tone} hooks for ${platform === 'all' ? 'all platforms' : platform}.
 Niche: ${niche || 'General'}
 Topic: ${topic || 'any topic'}

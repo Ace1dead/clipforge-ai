@@ -10,6 +10,7 @@ import projectRoutes from './routes/projects.js';
 import adminRoutes from './routes/admin.js';
 import toolRoutes from './routes/tools.js';
 import proxyRoutes from './routes/proxy.js';
+import aiRoutes from './routes/ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -65,7 +66,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tools', toolRoutes);
-app.use('/api/proxy', proxyRoutes);
+  app.use('/api/proxy', proxyRoutes);
+  app.use('/api/ai', aiRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
