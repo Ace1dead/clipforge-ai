@@ -871,7 +871,8 @@ export function generateEditTimeline(
   beatTimes: number[],
   bpm: number,
   style: { primaryStyle: string; colorSkin: string },
-  audioEnergyProfile?: number[]
+  audioEnergyProfile?: number[],
+  transcript?: string
 ): EditTimeline {
   const events: TimelineEvent[] = []
   const beatInterval = 60 / bpm * 1000 // ms
@@ -956,7 +957,7 @@ export function generateEditTimeline(
   })
 
   // Generate YouTube content suggestions
-  const suggestions = generateYouTubeSuggestions(style.primaryStyle, duration, beatTimes)
+  const suggestions = generateYouTubeSuggestions(style.primaryStyle, duration, beatTimes, transcript)
 
   return {
     analyzedMetadata: {
@@ -977,10 +978,24 @@ export function generateEditTimeline(
 function generateYouTubeSuggestions(
   style: string,
   duration: number,
-  beatTimes: number[]
+  beatTimes: number[],
+  transcript?: string
 ): EditTimeline['youtubeContentSuggestions'] {
   const suggestions: EditTimeline['youtubeContentSuggestions'] = []
 
+  // Transcript-aware B-roll detection
+  if (transcript && transcript.length > 20) {
+    const nouns = extractContextualNouns(transcript)
+    for (const noun of nouns.slice(0, 5)) {
+      suggestions.push({
+        searchString: `${noun} cinematic b-roll`,
+        purpose: `Contextual B-roll for "${noun}"`,
+        insertAtMs: 0,  // Will be placed by the timeline generator
+      })
+    }
+  }
+
+  // Style-based suggestions
   if (style === 'Velocity' || style === 'Raw/Impact') {
     suggestions.push({
       searchString: 'glitch overlay green screen transparent',
@@ -1011,6 +1026,46 @@ function generateYouTubeSuggestions(
   }
 
   return suggestions
+}
+
+/** Extract key nouns from transcript for contextual B-roll */
+function extractContextualNouns(transcript: string): string[] {
+  // Simple heuristic: extract capitalized words and common nouns
+  const words = transcript.split(/\s+/)
+  const nounCandidates = new Map<string, number>()
+
+  // Common B-roll-worthy concepts
+  const brollKeywords = [
+    'money', 'cash', 'profit', 'revenue', 'business', 'startup', 'office',
+    'car', 'house', 'travel', 'beach', 'mountain', 'city', 'night',
+    'food', 'cooking', 'gym', 'workout', 'music', 'concert', 'festival',
+    'technology', 'computer', 'phone', 'social', 'media', 'internet',
+    'love', 'heart', 'smile', 'laugh', 'cry', 'anger', 'fear',
+    'education', 'school', 'university', 'book', 'knowledge', 'wisdom',
+    'nature', 'ocean', 'forest', 'animal', 'dog', 'cat',
+    'fashion', 'style', 'art', 'design', 'color', 'light',
+  ]
+
+  for (const word of words) {
+    const clean = word.toLowerCase().replace(/[^a-z]/g, '')
+    if (clean.length < 3) continue
+
+    // Check if it matches known B-roll concepts
+    if (brollKeywords.includes(clean)) {
+      nounCandidates.set(clean, (nounCandidates.get(clean) ?? 0) + 1)
+    }
+
+    // Also check capitalized words (likely proper nouns / important concepts)
+    if (word[0] === word[0]?.toUpperCase() && word[0] !== word[0]?.toLowerCase()) {
+      nounCandidates.set(clean, (nounCandidates.get(clean) ?? 0) + 2) // Weight higher
+    }
+  }
+
+  // Sort by frequency, return top nouns
+  return Array.from(nounCandidates.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([noun]) => noun)
 }
 
 // ============================================================

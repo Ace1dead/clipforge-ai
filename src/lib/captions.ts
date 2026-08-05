@@ -48,6 +48,45 @@ export const FONT_FAMILIES: Record<CaptionStyle['family'], string> = {
   condensed: '"Arial Narrow", "Roboto Condensed", "Helvetica Neue", sans-serif',
 }
 
+// ─── Impact Word Detection (kinetic typography) ──────────────
+
+const IMPACT_WORDS = new Set([
+  // Emotional
+  'never', 'always', 'insane', 'crazy', 'amazing', 'incredible', 'unbelievable',
+  'shocking', 'secret', 'hidden', 'truth', 'lie', 'fake', 'real', 'destroy',
+  'crush', 'dominate', 'destroy', 'explode', 'fire', 'lit', 'bussin',
+  // Action
+  'stop', 'watch', 'look', 'listen', 'run', 'go', 'now', 'here', 'this',
+  'that', 'what', 'how', 'why', 'when', 'where', 'who',
+  // Viral hooks
+  'viral', 'trending', 'fyp', 'foryou', 'mindblown', 'gamechanger',
+  'levels', 'different', 'another', 'level', 'sigma', 'grindset',
+  // Numbers/emphasis
+  'one', 'two', 'three', 'first', 'last', 'only', 'best', 'worst',
+  'most', 'least', 'every', 'all', 'none', 'zero',
+])
+
+export function isImpactWord(word: string): boolean {
+  const clean = word.toLowerCase().replace(/[^a-z]/g, '')
+  return IMPACT_WORDS.has(clean) || clean.length >= 8 // Long words get emphasis too
+}
+
+// Enhanced pop-in with impact word scale boost
+export function getWordScale(
+  word: string,
+  age: number,
+  isActive: boolean,
+  anim: CaptionStyle['anim'],
+  baseBoost = 0.28,
+  impactBoost = 0.15,
+): number {
+  if (!isActive || (anim !== 'pop' && anim !== 'bounce')) return 1
+  const isImpact = isImpactWord(word)
+  const boost = isImpact ? baseBoost + impactBoost : baseBoost
+  const decay = age < 0.16 ? 1 + boost * (1 - age / 0.16) : 1
+  return decay
+}
+
 export function setStyleSize(id: string, sizePct: number): void {
   const s = CAPTION_STYLES.find((x) => x.id === id)
   if (s) s.fontSize = sizePct / 1000
@@ -172,8 +211,7 @@ export function drawCaptions(
       ctx.save()
       // per-word animation transform
       if (style.anim === 'pop' || style.anim === 'bounce') {
-        const popIn = age >= 0 && age < 0.16 ? 1 + 0.28 * (1 - age / 0.16) : 1
-        const scale = isActive ? popIn : 1
+        const scale = getWordScale(word.text, age, isActive, style.anim)
         ctx.translate(x + wordW / 2, lineY)
         ctx.scale(scale, scale)
         ctx.translate(-(x + wordW / 2), -lineY)
