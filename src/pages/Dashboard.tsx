@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Clapperboard, Scissors, Columns2, MessagesSquare, Type, Mic, Sparkles, SlidersHorizontal,
   Smile, Boxes, AudioLines, Slice, Crop, Subtitles, Eraser, Download, Scale, Archive, FileMusic,
-  Lightbulb, Calculator, CreditCard, Play, Trash2, ArrowRight, Zap, Radar,
+  Lightbulb, Calculator, CreditCard, Play, Trash2, ArrowRight, Zap, Radar, Film,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button, Card, Badge, EmptyState } from '../components/ui'
@@ -19,10 +19,12 @@ const QUICK: { to: string; label: string; desc: string; icon: ReactNode; accent?
   { to: '/tools/split-screen', label: 'Split Screen', desc: '2–4 videos one canvas', icon: <Columns2 size={20} /> },
   { to: '/tools/reddit-story', label: 'Reddit Story', desc: 'Posts → narrated videos', icon: <MessagesSquare size={20} /> },
   { to: '/tools/ai-images', label: 'AI Images', desc: 'Thumbnails & b-roll', icon: <Sparkles size={20} /> },
+  { to: '/tools/stock-media', label: 'Stock Media', desc: 'Millions of free clips', icon: <Film size={20} /> },
 ]
 
 const TOOLS: { to: string; label: string; icon: ReactNode; group: string }[] = [
   { to: '/tools/viral-scanner', label: 'Viral Scanner', icon: <Radar size={15} />, group: 'Create' },
+  { to: '/tools/stock-media', label: 'Stock Media', icon: <Film size={15} />, group: 'Create' },
   { to: '/tools/fake-text', label: 'Fake Text', icon: <Type size={15} />, group: 'Create' },
   { to: '/tools/voice-changer', label: 'Voice Changer', icon: <SlidersHorizontal size={15} />, group: 'AI' },
   { to: '/tools/face-swap', label: 'Face Swap', icon: <Smile size={15} />, group: 'AI' },
