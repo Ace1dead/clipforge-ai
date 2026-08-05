@@ -27,3 +27,6 @@ server/data/
 *.njsproj
 *.sln
 *.sw?
+
+# Debug files
+*-player-script.js
