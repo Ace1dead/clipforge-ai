@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import {
   Clapperboard, Scissors, Columns2, MessagesSquare, Type, Mic, Sparkles, SlidersHorizontal,
   Smile, Boxes, AudioLines, Slice, Crop, Subtitles, Eraser, Download, Scale, Archive, FileMusic,
-  Lightbulb, Calculator, CreditCard, Menu, X, LogOut, Zap, ChevronRight, Settings, Film,
+  Lightbulb, Calculator, CreditCard, Menu, X, LogOut, Zap, ChevronRight, Settings, Film, Layers,
 } from 'lucide-react'
 import { Logo, Badge, Button, cx } from './ui'
 import { getApiUser, clearAuth } from '../lib/api'
@@ -22,6 +22,7 @@ const NAV: NavGroup[] = [
       { to: '/tools/reddit-story', label: 'Reddit Story', icon: <MessagesSquare size={16} /> },
       { to: '/tools/fake-text', label: 'Fake Text', icon: <Type size={16} /> },
       { to: '/tools/stock-media', label: 'Stock Media', icon: <Film size={16} /> },
+      { to: '/tools/batch', label: 'Batch Process', icon: <Layers size={16} /> },
     ],
   },
   {

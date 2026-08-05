@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Clapperboard, Scissors, Columns2, MessagesSquare, Type, Mic, Sparkles, SlidersHorizontal,
   Smile, Boxes, AudioLines, Slice, Crop, Subtitles, Eraser, Download, Scale, Archive, FileMusic,
-  Lightbulb, Calculator, CreditCard, Play, Trash2, ArrowRight, Zap, Radar, Film,
+  Lightbulb, Calculator, CreditCard, Play, Trash2, ArrowRight, Zap, Radar, Film, Layers,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button, Card, Badge, EmptyState } from '../components/ui'
@@ -25,6 +25,7 @@ const QUICK: { to: string; label: string; desc: string; icon: ReactNode; accent?
 const TOOLS: { to: string; label: string; icon: ReactNode; group: string }[] = [
   { to: '/tools/viral-scanner', label: 'Viral Scanner', icon: <Radar size={15} />, group: 'Create' },
   { to: '/tools/stock-media', label: 'Stock Media', icon: <Film size={15} />, group: 'Create' },
+  { to: '/tools/batch', label: 'Batch Process', icon: <Layers size={15} />, group: 'Create' },
   { to: '/tools/fake-text', label: 'Fake Text', icon: <Type size={15} />, group: 'Create' },
   { to: '/tools/voice-changer', label: 'Voice Changer', icon: <SlidersHorizontal size={15} />, group: 'AI' },
   { to: '/tools/face-swap', label: 'Face Swap', icon: <Smile size={15} />, group: 'AI' },
