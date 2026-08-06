@@ -97,7 +97,9 @@ router.get('/me', requireAuth, (req: AuthRequest, res) => {
 // Admin key login - grants instant premium
 router.post('/admin-login', (req, res) => {
   const { email, adminKey } = req.body;
+  console.log(`[admin-login] email=${email}, key=${adminKey ? 'provided' : 'missing'}, envKey=${process.env.ADMIN_KEY ? 'set' : 'NOT SET'}`);
   if (!adminKey || adminKey !== process.env.ADMIN_KEY) {
+    console.log(`[admin-login] Key mismatch: received="${adminKey}", expected="${process.env.ADMIN_KEY}"`);
     res.status(403).json({ error: 'Invalid admin key' });
     return;
   }

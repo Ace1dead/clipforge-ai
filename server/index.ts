@@ -37,9 +37,13 @@ app.use(cors({
 }));
 
 // COOP/COEP headers for SharedArrayBuffer (required by ffmpeg.wasm multi-thread, browser-whisper)
-app.use((_req, res, next) => {
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
-  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+// Only set on routes that need them, NOT on API routes (breaks fetch + localStorage)
+app.get('/{*splat}', (_req, res, next) => {
+  // Only set COEP/COOP for HTML pages (frontend routes), not API routes
+  if (!_req.path.startsWith('/api')) {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+  }
   next()
 })
 
