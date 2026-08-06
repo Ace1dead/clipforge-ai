@@ -447,10 +447,10 @@ export function Editor() {
         clipDuration={duration}
         trimStart={0}
         trimEnd={duration}
-        words={[]}
+        words={words}
         hooks={[]}
         platform={res === '9:16' ? 'tiktok' : 'youtube'}
-        initialCaptionStyle="pop-classic"
+        initialCaptionStyle={project?.captionStyle ?? 'pop-classic'}
         initialEditStyle={previewEditStyle}
         initialColorSkin={previewColorSkin}
         onClose={() => setPreviewOpen(false)}

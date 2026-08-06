@@ -13,6 +13,10 @@ export type EditStyleId =
   | 'compositing'
   | 'mmv_kinetic'
   | 'kinetic_typography'
+  | 'cinematic'
+  | 'documentary'
+  | 'music_video'
+  | 'sports'
 
 export type ColorSkinId = 'candy' | 'edgy' | 'lofi' | 'classic'
 
@@ -96,13 +100,13 @@ export const EDIT_STYLES: Record<EditStyleId, EditStyle> = {
     icon: '🌊',
     screenShake: { enabled: false, intensity: 0, frequency: 0 },
     chromaticAberration: { enabled: false, offset: 0 },
-    vignette: { enabled: true, strength: 0.15, radius: 0.8 },
+    vignette: { enabled: true, strength: 0.2, radius: 0.75 },
     filmGrain: { enabled: false, intensity: 0 },
     exposurePulse: { enabled: false, stops: 0, decayFrames: 0 },
     scanlines: { enabled: false, density: 0, opacity: 0 },
     glitch: { enabled: false, intensity: 0 },
-    velocity: { enabled: false, fastSpeed: 1, slowSpeed: 1, slowDuration: 0 },
-    audioReactive: { beatShake: false, beatFlash: false, beatGlitch: false },
+    velocity: { enabled: true, fastSpeed: 1.5, slowSpeed: 0.8, slowDuration: 0.15 },
+    audioReactive: { beatShake: false, beatFlash: true, beatGlitch: false },
     triggers: {
       genres: ['cinematic', 'ambient', 'lo-fi', 'classical'],
       audioMoods: ['calm', 'emotional', 'nostalgic'],
@@ -171,6 +175,92 @@ export const EDIT_STYLES: Record<EditStyleId, EditStyle> = {
       genres: ['hip-hop', 'rap', 'pop', 'electronic'],
       audioMoods: ['upbeat', 'aggressive', 'energetic'],
       tempos: ['mid', 'fast'],
+    },
+  },
+
+  cinematic: {
+    id: 'cinematic',
+    name: 'Cinematic',
+    description: 'Widescreen letterbox, film grain, subtle vignette. Hollywood-grade color grade with teal/orange split.',
+    icon: '🎞️',
+    screenShake: { enabled: false, intensity: 0, frequency: 0 },
+    chromaticAberration: { enabled: false, offset: 0 },
+    vignette: { enabled: true, strength: 0.4, radius: 0.6 },
+    filmGrain: { enabled: true, intensity: 0.06 },
+    exposurePulse: { enabled: false, stops: 0, decayFrames: 0 },
+    scanlines: { enabled: false, density: 0, opacity: 0 },
+    glitch: { enabled: false, intensity: 0 },
+    velocity: { enabled: false, fastSpeed: 1, slowSpeed: 1, slowDuration: 0 },
+    audioReactive: { beatShake: false, beatFlash: false, beatGlitch: false },
+    triggers: {
+      genres: ['cinematic', 'ost', 'classical', 'ambient'],
+      audioMoods: ['dramatic', 'emotional', 'epic', 'nostalgic'],
+      tempos: ['slow', 'mid'],
+    },
+  },
+
+  documentary: {
+    id: 'documentary',
+    name: 'Documentary',
+    description: 'Clean, stable shots with subtle grain. Text overlays at bottom, minimal effects. Informational.',
+    icon: '📹',
+    screenShake: { enabled: false, intensity: 0, frequency: 0 },
+    chromaticAberration: { enabled: false, offset: 0 },
+    vignette: { enabled: true, strength: 0.15, radius: 0.8 },
+    filmGrain: { enabled: true, intensity: 0.03 },
+    exposurePulse: { enabled: false, stops: 0, decayFrames: 0 },
+    scanlines: { enabled: false, density: 0, opacity: 0 },
+    glitch: { enabled: false, intensity: 0 },
+    velocity: { enabled: false, fastSpeed: 1, slowSpeed: 1, slowDuration: 0 },
+    audioReactive: { beatShake: false, beatFlash: false, beatGlitch: false },
+    triggers: {
+      genres: ['documentary', 'news', 'educational', 'interview'],
+      audioMoods: ['calm', 'informative', 'serious'],
+      tempos: ['slow', 'mid'],
+    },
+  },
+
+  music_video: {
+    id: 'music_video',
+    name: 'Music Video',
+    description: 'Beat-synced cuts with color grade shifts per section. Fast transitions on drops, slow on verses.',
+    icon: '🎵',
+    screenShake: { enabled: true, intensity: 0.6, frequency: 30 },
+    chromaticAberration: { enabled: true, offset: 1.5 },
+    vignette: { enabled: true, strength: 0.25, radius: 0.65 },
+    filmGrain: { enabled: false, intensity: 0 },
+    exposurePulse: { enabled: true, stops: 1.0, decayFrames: 4 },
+    scanlines: { enabled: false, density: 0, opacity: 0 },
+    glitch: { enabled: true, intensity: 0.15 },
+    velocity: { enabled: true, fastSpeed: 2.5, slowSpeed: 0.6, slowDuration: 0.1 },
+    audioReactive: { beatShake: true, beatFlash: true, beatGlitch: false },
+    triggers: {
+      genres: ['music-video', 'pop', 'hip-hop', 'electronic', 'rock'],
+      audioMoods: ['energetic', 'upbeat', 'dramatic'],
+      tempos: ['mid', 'fast', 'very_fast'],
+      minBPM: 90,
+    },
+  },
+
+  sports: {
+    id: 'sports',
+    name: 'Sports / Hype',
+    description: 'Aggressive shake, flash on impact, slow-mo replays. Designed for highlights and reaction clips.',
+    icon: '🏆',
+    screenShake: { enabled: true, intensity: 1.5, frequency: 40 },
+    chromaticAberration: { enabled: true, offset: 3 },
+    vignette: { enabled: true, strength: 0.35, radius: 0.55 },
+    filmGrain: { enabled: true, intensity: 0.04 },
+    exposurePulse: { enabled: true, stops: 2.0, decayFrames: 3 },
+    scanlines: { enabled: false, density: 0, opacity: 0 },
+    glitch: { enabled: true, intensity: 0.3 },
+    velocity: { enabled: true, fastSpeed: 4.0, slowSpeed: 0.15, slowDuration: 0.15 },
+    audioReactive: { beatShake: true, beatFlash: true, beatGlitch: true },
+    triggers: {
+      genres: ['sports', 'gaming', 'action', 'extreme'],
+      audioMoods: ['intense', 'chaotic', 'aggressive', 'energetic'],
+      tempos: ['fast', 'very_fast'],
+      minBPM: 120,
     },
   },
 }

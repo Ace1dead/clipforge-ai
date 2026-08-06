@@ -556,7 +556,7 @@ export function AutoClip() {
                     <Button size="xs" variant="secondary" onClick={() => window.open('https://www.y2mate.com/', '_blank')}>
                       Download Helper
                     </Button>
-                    <Button size="xs" variant="ghost" onClick={() => { navigator.clipboard.writeText('https://www.youtube.com/watch?v=' + extractVideoId(urlInput.trim()) || ''); toast('info', 'Copied embed code') }}>
+                    <Button size="xs" variant="ghost" onClick={() => { navigator.clipboard.writeText('https://www.youtube.com/watch?v=' + (extractVideoId(urlInput.trim()) ?? '')); toast('info', 'Copied embed code') }}>
                       Copy Video ID
                     </Button>
                   </div>
