@@ -798,13 +798,15 @@ Respond with JSON:
 
   try {
     const res = await generateAI({
-      system: 'You are an expert AI video editor and content strategist. Always respond with valid JSON only.',
-      prompt,
+      messages: [
+        { role: 'system', content: 'You are an expert AI video editor and content strategist. Always respond with valid JSON only.' },
+        { role: 'user', content: prompt },
+      ],
       temperature: 0.3,
       maxTokens: 500,
     });
 
-    const parsed = parseStyleResponse(res.text)
+    const parsed = parseStyleResponse(res.content)
     if (parsed) return parsed
   } catch {
     // Fall through to heuristic
@@ -1128,13 +1130,15 @@ Respond with JSON:
 
   try {
     const res = await generateAI({
-      system: 'You are an expert short-form video scriptwriter. Always respond with valid JSON only.',
-      prompt,
+      messages: [
+        { role: 'system', content: 'You are an expert short-form video scriptwriter. Always respond with valid JSON only.' },
+        { role: 'user', content: prompt },
+      ],
       temperature: 0.7,
       maxTokens: 800,
     })
 
-    const parsed = parseScriptResponse(res.text, duration)
+    const parsed = parseScriptResponse(res.content, duration)
     if (parsed) return parsed
   } catch {
     // Fall through to heuristic

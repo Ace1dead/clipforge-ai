@@ -23,7 +23,7 @@ export interface WebCodecsCapabilities {
 
 export function detectWebCodecsCapabilities(): WebCodecsCapabilities {
   const webCodecsSupported = typeof VideoEncoder !== 'undefined'
-  const mp4MuxerSupported = typeof globalThis.Mp4Muxer !== 'undefined'
+  const mp4MuxerSupported = typeof (globalThis as any).Mp4Muxer !== 'undefined'
 
   let h264Supported = false
   let hardwareAcceleration: 'hardware' | 'software' | 'unknown' = 'unknown'
@@ -38,8 +38,8 @@ export function detectWebCodecsCapabilities(): WebCodecsCapabilities {
         framerate: 30,
       }
       // Check if H.264 is supported at all
-      VideoEncoder.isConfigSupported(config).then(result => {
-        h264Supported = result.supported
+      VideoEncoder.isConfigSupported(config).then((result: any) => {
+        h264Supported = !!result.supported
       })
     } catch { /* ignore */ }
   }
@@ -140,7 +140,7 @@ export async function exportWithWebCodecs(opts: WebCodecsExportOpts): Promise<Bl
     encoderReject = reject
 
     signal?.addEventListener('abort', () => {
-      encoder.abort()
+      encoder.close()
       reject(new Error('Export cancelled'))
     })
 

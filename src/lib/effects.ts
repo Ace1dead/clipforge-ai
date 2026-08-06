@@ -134,6 +134,9 @@ export function exposurePulse(stops: number = 1.5, decayFrames: number = 4): Eff
 // ─── Color Grading ─────────────────────────────────────────────
 
 export interface ColorGrade {
+  name: string
+  shadows: string
+  highlights: string
   brightness: number  // 0-2
   contrast: number    // 0-2
   saturation: number  // 0-2
@@ -143,10 +146,10 @@ export interface ColorGrade {
 }
 
 export const COLOR_SKINS: Record<string, ColorGrade> = {
-  candy: { brightness: 1.15, contrast: 0.9, saturation: 1.3, hueShift: 10, temperature: 0.2, tint: 0.1 },
-  edgy: { brightness: 0.85, contrast: 1.4, saturation: 0.9, hueShift: -15, temperature: -0.3, tint: -0.1 },
-  lofi: { brightness: 0.95, contrast: 0.85, saturation: 0.6, hueShift: 5, temperature: 0.4, tint: 0 },
-  classic: { brightness: 1.0, contrast: 1.0, saturation: 1.0, hueShift: 0, temperature: 0, tint: 0 },
+  candy: { name: 'Candy', shadows: '#ff6b9d', highlights: '#c084fc', brightness: 1.15, contrast: 0.9, saturation: 1.3, hueShift: 10, temperature: 0.2, tint: 0.1 },
+  edgy: { name: 'Edgy', shadows: '#ef4444', highlights: '#fbbf24', brightness: 0.85, contrast: 1.4, saturation: 0.9, hueShift: -15, temperature: -0.3, tint: -0.1 },
+  lofi: { name: 'LoFi', shadows: '#f59e0b', highlights: '#8b5cf6', brightness: 0.95, contrast: 0.85, saturation: 0.6, hueShift: 5, temperature: 0.4, tint: 0 },
+  classic: { name: 'Classic', shadows: '#374151', highlights: '#d1d5db', brightness: 1.0, contrast: 1.0, saturation: 1.0, hueShift: 0, temperature: 0, tint: 0 },
 }
 
 export function colorGrade(grade: ColorGrade): EffectFn {

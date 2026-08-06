@@ -211,13 +211,14 @@ export function Templates() {
       {/* Templates Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         {filtered.map(template => (
-          <Card
+          <div
             key={template.id}
-            className={`p-5 cursor-pointer transition-all hover:border-accent/30 ${
-              selected?.id === template.id ? 'border-accent/40 bg-accent/5' : ''
-            }`}
             onClick={() => setSelected(template)}
+            className={`p-0 cursor-pointer transition-all hover:border-accent/30 rounded-xl border ${
+              selected?.id === template.id ? 'border-accent/40 bg-accent/5' : 'border-border'
+            }`}
           >
+            <Card className="p-5 border-0">
             <div className="flex items-start gap-3">
               <div className="w-12 h-12 rounded-xl bg-elevated flex items-center justify-center text-2xl shrink-0">
                 {template.preview}
@@ -254,7 +255,8 @@ export function Templates() {
                 Use Template
               </Button>
             </div>
-          </Card>
+            </Card>
+          </div>
         ))}
       </div>
 
@@ -282,7 +284,7 @@ export function Templates() {
               <h4 className="text-[12px] font-semibold text-faint uppercase tracking-wide mb-2">Platforms</h4>
               <div className="flex gap-2">
                 {selected.platforms.map(p => (
-                  <Badge key={p} tone="soft">{p}</Badge>
+                  <Badge key={p} tone="neutral">{p}</Badge>
                 ))}
               </div>
             </div>

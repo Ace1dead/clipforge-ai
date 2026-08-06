@@ -331,17 +331,17 @@ export function AutoClip() {
     setExportProgress(0)
     setStep('exporting')
 
+    const captionStyleId = captionStyles[clip.id] || clip.captionStyle || 'pop-classic'
+    const timedWords = toTimedWords(wordTimestamps)
+
     try {
-      const captionStyleId = captionStyles[clip.id] || clip.captionStyle || 'pop-classic'
-      const timedWords = toTimedWords(wordTimestamps)
+      const drawFn = createDrawFrame(config)
       const blob = await renderComposition({
         sources: [{ url: videoUrl, fit: 'cover' }],
         outW: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1080 : 1920,
         outH: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1920 : 1080,
         trim: { start: clip.start, end: clip.end },
-        effects: config.editStyle,
-        captions: timedWords.map((w) => ({ text: w.text, start: w.start, end: w.end })),
-        captionStyle: captionStyleId,
+        draw: (ctx, time, w, h) => drawFn({ ctx, time, w, h }),
         onProgress: (p) => setExportProgress(p),
       })
 
