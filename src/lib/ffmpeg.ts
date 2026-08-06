@@ -76,3 +76,36 @@ export async function transcodeToFormat(
 export function isFFmpegSupported(): boolean {
   return typeof WebAssembly !== 'undefined';
 }
+
+/**
+ * Concatenate several same-stream WebM/MP4 blobs into one file via FFmpeg's
+ * concat demuxer (used for jump-cut export where each kept segment is rendered
+ * separately). Segments must share the same codec/container.
+ */
+export async function concatSegments(
+  blobs: Blob[],
+  onProgress?: (p: number) => void
+): Promise<Blob> {
+  if (blobs.length === 0) throw new Error('No segments to concatenate');
+  if (blobs.length === 1) return blobs[0];
+
+  const ffmpeg = await loadFFmpeg(onProgress);
+  const names = blobs.map((_, i) => `seg${i}.webm`);
+  for (let i = 0; i < blobs.length; i++) {
+    await ffmpeg.writeFile(names[i], new Uint8Array(await blobs[i].arrayBuffer()));
+  }
+  const list = names.map((n) => `file '${n}'`).join('\n') + '\n';
+  await ffmpeg.writeFile('concat.txt', new TextEncoder().encode(list));
+  await ffmpeg.exec([
+    '-f', 'concat', '-safe', '0', '-i', 'concat.txt',
+    '-c', 'copy', 'output.webm',
+  ]);
+  const data = await ffmpeg.readFile('output.webm');
+  for (const n of [...names, 'concat.txt', 'output.webm']) {
+    try { await ffmpeg.deleteFile(n); } catch { /* ignore */ }
+  }
+  const arr = data instanceof Uint8Array ? data : new TextEncoder().encode(data);
+  const buf = new ArrayBuffer(arr.byteLength);
+  new Uint8Array(buf).set(arr);
+  return new Blob([buf], { type: 'video/webm' });
+}

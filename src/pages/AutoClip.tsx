@@ -6,15 +6,17 @@ import type { Picked } from '../components/MediaDropzone'
 import { ClipPreview } from '../components/ClipPreview'
 import { VideoPreviewModal } from '../components/VideoPreviewModal'
 import type { CompositorConfig } from '../lib/compositor'
-import { Button, Card, ProgressBar, Badge, toast, Input, Divider, Select } from '../components/ui'
+import { Button, Card, ProgressBar, Badge, toast, Input, Divider, Select, Toggle } from '../components/ui'
 import { decodeAudio, lufsNormalize, measureIntegratedLUFS } from '../lib/audio'
-import { renderComposition } from '../lib/video'
+import { renderComposition, renderJumpCut } from '../lib/video'
 import { fmtTime, downloadBlob, fmtBytes } from '../lib/format'
 import { analyzeVideo, extractClips, type VideoAnalysis, type ClipResult } from '../lib/aiEngine'
 import { drawCaptions, getStyle, CAPTION_STYLES, type TimedWord } from '../lib/captions'
 import { transcribeAudio, type WordTimestamp, isSTTSupported } from '../lib/stt'
 import { createDrawFrame } from '../lib/compositor'
 import type { EditStyleId, ColorSkinId } from '../lib/editStyles'
+import { detectSilences, type Silence } from '../lib/editor/silence'
+import { buildJumpCutPlan } from '../lib/editor/jumpcut'
 
 type Step = 'url' | 'analyzing' | 'results' | 'exporting'
 
@@ -62,6 +64,9 @@ export function AutoClip() {
 
   const [captionStyles, setCaptionStyles] = useState<Record<string, string>>({})
   const [wordTimestamps, setWordTimestamps] = useState<WordTimestamp[]>([])
+  const [silences, setSilences] = useState<Silence[]>([])
+  const [jumpCut, setJumpCut] = useState(false)
+  const [energyProfile, setEnergyProfile] = useState<number[]>([])
 
   const abortRef = useRef<AbortController | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -164,6 +169,11 @@ export function AutoClip() {
         const rms = Math.sqrt(slice.reduce((s, v) => s + v * v, 0) / Math.max(slice.length, 1))
         energyProfile.push(rms)
       }
+      // Detect silent gaps in the 1-second energy curve for jump-cut export.
+      const detected = detectSilences(energyProfile, { windowSec: 1, minSilenceSec: 0.8 })
+      setSilences(detected)
+      setEnergyProfile(energyProfile)
+      if (detected.length > 0) toast('info', `Detected ${detected.length} silent gap${detected.length === 1 ? '' : 's'} — enable Jump-cut in export`)
     } catch { /* audio analysis optional */ }
 
     // Auto-transcribe if supported
@@ -228,12 +238,7 @@ export function AutoClip() {
     const timedWords = toTimedWords(wordTimestamps)
 
     try {
-      const blob = await renderComposition({
-        sources: [{ url: videoUrl, fit: 'cover' }],
-        outW: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1080 : 1920,
-        outH: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1920 : 1080,
-        trim: { start: clip.start, end: clip.end },
-        draw: (ctx, time, w, h) => {
+      const draw = (ctx: CanvasRenderingContext2D, time: number, w: number, h: number) => {
           // HOOK TEXT (first 3 seconds) - big animated text
           if (time < 3 && clip.hooks[0]) {
             const alpha = time < 0.5 ? time * 2 : time > 2.5 ? (3 - time) * 2 : 1
@@ -296,10 +301,30 @@ export function AutoClip() {
           if (timedWords.length > 0) {
             drawCaptions(ctx, timedWords, getStyle(captionStyleId), time, w, h)
           }
-        },
+        }
+
+      const baseOpts = {
+        sources: [{ url: videoUrl, fit: 'cover' as const }],
+        outW: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1080 : 1920,
+        outH: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1920 : 1080,
         muteVideoAudio: false,
-        onProgress: (p) => setExportProgress(p),
-      })
+        onProgress: (p: number) => setExportProgress(p),
+      }
+
+      let blob: Blob
+      if (jumpCut) {
+        const segs = buildJumpCutPlan(clip.start, clip.end, silences, { marginSec: 0.15, minCutSec: 0.4 })
+        blob = await renderJumpCut({
+          ...baseOpts,
+          trim: { start: clip.start, end: clip.end },
+          draw,
+          timeBase: clip.start,
+          segments: segs,
+          format: 'mp4',
+        })
+      } else {
+        blob = await renderComposition({ ...baseOpts, trim: { start: clip.start, end: clip.end }, draw })
+      }
 
       // LUFS normalize the exported audio to -14 LUFS (streaming standard)
       let finalBlob = blob
@@ -610,6 +635,11 @@ export function AutoClip() {
                 </span>
               </h3>
               <div className="flex items-center gap-2">
+                <Toggle
+                  checked={jumpCut}
+                  onChange={setJumpCut}
+                  label={silences.length > 0 ? `Jump-cut ${silences.length} silence${silences.length === 1 ? '' : 's'}` : 'Jump-cut silences'}
+                />
                 <Button
                   variant="primary"
                   size="sm"

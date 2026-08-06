@@ -1,6 +1,6 @@
 import { getAudioCtx } from './audio'
 import { clamp } from './format'
-import { webmToMp4, loadFFmpeg, isFFmpegSupported } from './ffmpeg'
+import { webmToMp4, loadFFmpeg, isFFmpegSupported, concatSegments } from './ffmpeg'
 
 export interface VideoMeta { duration: number; width: number; height: number }
 
@@ -236,4 +236,51 @@ export async function preloadFFmpeg(): Promise<void> {
   if (isFFmpegSupported()) {
     await loadFFmpeg();
   }
+}
+
+export interface JumpCutOpts extends RenderCompositionOpts {
+  /** Ordered kept sub-ranges to render & concatenate. */
+  segments: { start: number; end: number }[]
+  /** Output format (mp4 requires ffmpeg). */
+  format?: ExportFormat
+  /** Clip-start (the source timestamp that maps to clip-local time 0), so the
+   *  `draw` callback stays aligned to the original clip timeline across cuts. */
+  timeBase?: number
+}
+
+/**
+ * Render a clip that has had silences jump-cut out. Each surviving range is
+ * rendered separately (so playback skips the removed dead-air), then stitched
+ * back together with ffmpeg's concat demuxer. Falls back to a single render
+ * when ffmpeg is unavailable.
+ */
+export async function renderJumpCut(opts: JumpCutOpts): Promise<Blob> {
+  const clipBase = opts.timeBase ?? opts.trim?.start ?? 0
+  const effective = opts.segments.length > 0
+    ? opts.segments
+    : [{ start: clipBase, end: clipBase + (opts.trim?.end ?? Infinity) }]
+
+  const baseDraw = opts.draw
+  const blobs: Blob[] = []
+  for (const seg of effective) {
+    // Segment-local draw time -> original clip-local time.
+    const bias = seg.start - clipBase
+    const draw = (ctx: CanvasRenderingContext2D, local: number, w: number, h: number) =>
+      baseDraw?.(ctx, local + bias, w, h)
+    const part = await renderComposition({
+      ...opts,
+      trim: seg,
+      draw,
+      signal: undefined,
+    } as RenderCompositionOpts)
+    blobs.push(part)
+  }
+
+  if (blobs.length > 1 && isFFmpegSupported()) {
+    const joined = await concatSegments(blobs, opts.onProgress)
+    if (opts.format === 'mp4') return webmToMp4(joined, opts.onProgress)
+    return joined
+  }
+  if (opts.format === 'mp4' && isFFmpegSupported()) return webmToMp4(blobs[0], opts.onProgress)
+  return blobs[0]
 }

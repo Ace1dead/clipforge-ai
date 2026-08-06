@@ -12,6 +12,7 @@ import toolRoutes from './routes/tools.js';
 import proxyRoutes from './routes/proxy.js';
 import aiRoutes from './routes/ai.js';
 import transcribeRoutes from './routes/transcribe.js';
+import sceneRoutes from './routes/scene.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -38,8 +39,7 @@ app.use(cors({
 
 // COOP/COEP headers for SharedArrayBuffer (required by ffmpeg.wasm multi-thread, browser-whisper)
 // Only set on routes that need them, NOT on API routes (breaks fetch + localStorage)
-app.get('/{*splat}', (_req, res, next) => {
-  // Only set COEP/COOP for HTML pages (frontend routes), not API routes
+app.use((_req, res, next) => {
   if (!_req.path.startsWith('/api')) {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
@@ -83,6 +83,8 @@ app.use('/api/tools', toolRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/transcribe', rateLimitMiddleware(10, 60000)); // 10 transcriptions per minute
   app.use('/api/transcribe', transcribeRoutes);
+  app.use('/api/scene', rateLimitMiddleware(30, 60000)); // 30 scene analyses per minute
+  app.use('/api/scene', sceneRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -109,6 +111,12 @@ if (fs.existsSync(distPath + '/index.html')) {
     res.status(500).json({ error: 'Frontend not built', checked: possiblePaths });
   });
 }
+
+// Global error handler — must be last
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[ERROR]', err?.message || err);
+  res.status(err?.status || 500).json({ error: err?.message || 'Internal server error' });
+});
 
 // Initialize database then start server
 initDb().then(() => {
