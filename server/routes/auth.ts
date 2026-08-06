@@ -96,34 +96,39 @@ router.get('/me', requireAuth, (req: AuthRequest, res) => {
 
 // Admin key login - grants instant premium
 router.post('/admin-login', (req, res) => {
-  const { email, adminKey } = req.body;
-  console.log(`[admin-login] email=${email}, key=${adminKey ? 'provided' : 'missing'}, envKey=${process.env.ADMIN_KEY ? 'set' : 'NOT SET'}`);
-  if (!adminKey || adminKey !== process.env.ADMIN_KEY) {
-    console.log(`[admin-login] Key mismatch: received="${adminKey}", expected="${process.env.ADMIN_KEY}"`);
-    res.status(403).json({ error: 'Invalid admin key' });
-    return;
+  try {
+    const { email, adminKey } = req.body;
+    console.log(`[admin-login] email=${email}, key=${adminKey ? 'provided' : 'missing'}, envKey=${process.env.ADMIN_KEY ? 'set' : 'NOT SET'}`);
+    if (!adminKey || adminKey !== process.env.ADMIN_KEY) {
+      console.log(`[admin-login] Key mismatch: received="${adminKey}", expected="${process.env.ADMIN_KEY}"`);
+      res.status(403).json({ error: 'Invalid admin key' });
+      return;
+    }
+    if (!email) {
+      res.status(400).json({ error: 'Email required' });
+      return;
+    }
+    let user = findByEmail(email);
+    if (!user) {
+      const newUser = createUser(email, 'admin-managed-account', email.split('@')[0]);
+      user = { ...newUser, password_hash: '' } as any;
+    }
+    // Grant admin + pro
+    const userId = user!.id;
+    db.prepare('UPDATE users SET role = \'admin\', plan = \'pro\', credits = 999999, updated_at = datetime(\'now\') WHERE id = ?').run(userId);
+    const freshUser = findById(userId)!;
+    const safeUser = toSafeUser(freshUser);
+    const payload = { userId: freshUser.id, role: 'admin' as const };
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken(payload);
+    const sessionId = uuidv4();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO sessions (id, user_id, refresh_token, expires_at) VALUES (?, ?, ?, ?)').run(sessionId, freshUser.id, refreshToken, expiresAt);
+    res.json({ user: safeUser, accessToken, refreshToken, sessionId });
+  } catch (err: any) {
+    console.error('[admin-login] Error:', err?.message || err);
+    res.status(500).json({ error: 'Admin login failed: ' + (err?.message || 'unknown error') });
   }
-  if (!email) {
-    res.status(400).json({ error: 'Email required' });
-    return;
-  }
-  let user = findByEmail(email);
-  if (!user) {
-    const newUser = createUser(email, 'admin-managed-account', email.split('@')[0]);
-    user = { ...newUser, password_hash: '' } as any;
-  }
-  // Grant admin + pro
-  const userId = user!.id;
-  db.prepare('UPDATE users SET role = \'admin\', plan = \'pro\', credits = 999999, updated_at = datetime(\'now\') WHERE id = ?').run(userId);
-  const freshUser = findById(userId)!;
-  const safeUser = toSafeUser(freshUser);
-  const payload = { userId: freshUser.id, role: 'admin' as const };
-  const accessToken = signAccessToken(payload);
-  const refreshToken = signRefreshToken(payload);
-  const sessionId = uuidv4();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  db.prepare('INSERT INTO sessions (id, user_id, refresh_token, expires_at) VALUES (?, ?, ?, ?)').run(sessionId, freshUser.id, refreshToken, expiresAt);
-  res.json({ user: safeUser, accessToken, refreshToken, sessionId });
 });
 
 export default router;
