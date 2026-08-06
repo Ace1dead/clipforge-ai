@@ -23,11 +23,11 @@ export function HighlightScanner() {
     const file = files[0]
     if (!file) return
     if (!file.type.startsWith('video/')) {
-      toast.error('Please select a video file')
+      toast('error', 'Please select a video file')
       return
     }
     if (file.size > 500 * 1024 * 1024) {
-      toast.error('File exceeds 500MB limit')
+      toast('error', 'File exceeds 500MB limit')
       return
     }
     if (videoUrl) URL.revokeObjectURL(videoUrl)
@@ -82,9 +82,9 @@ export function HighlightScanner() {
 
       setResult(analysisResult)
       setHighlights(analysisResult.highlights)
-      toast.success(`Found ${analysisResult.highlights.length} highlights`)
+      toast('success', `Found ${analysisResult.highlights.length} highlights`)
     } catch (err) {
-      toast.error('Analysis failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      toast('error', 'Analysis failed', err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setAnalyzing(false)
     }
@@ -181,7 +181,7 @@ export function HighlightScanner() {
                         {virality.label}
                       </div>
                       <div className="text-[10px] text-text-secondary">
-                        Score: {virality.score.toFixed(1)}
+                        Total: {virality.total}
                       </div>
                     </div>
                   </div>

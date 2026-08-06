@@ -25,11 +25,11 @@ export function TranscriptEditor() {
     const file = files[0]
     if (!file) return
     if (!file.type.startsWith('video/')) {
-      toast.error('Please select a video file')
+      toast('error', 'Please select a video file')
       return
     }
     if (file.size > 500 * 1024 * 1024) {
-      toast.error('File exceeds 500MB limit')
+      toast('error', 'File exceeds 500MB limit')
       return
     }
     if (videoUrl) URL.revokeObjectURL(videoUrl)
@@ -51,9 +51,9 @@ export function TranscriptEditor() {
       const result = await transcribeAudio(videoFile, language)
       setTranscript(result)
       setWords(result.words)
-      toast.success(`Transcribed ${result.words.length} words`)
+      toast('success', `Transcribed ${result.words.length} words`)
     } catch (err) {
-      toast.error('Transcription failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      toast('error', 'Transcription failed', err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setTranscribing(false)
     }
@@ -99,7 +99,7 @@ export function TranscriptEditor() {
     setWords(newWords)
     setSelectedWordIndices([])
     setSelectedRange(null)
-    toast.info(`Deleted ${end - start + 1} words`)
+    toast('info', `Deleted ${end - start + 1} words`)
   }, [selectedWordIndices, words])
 
   const handleDuplicateSelected = useCallback(() => {
@@ -110,7 +110,7 @@ export function TranscriptEditor() {
     setEditCommands(prev => [...prev, cmd])
     const newWords = applyTextEdit(words, [cmd])
     setWords(newWords)
-    toast.info('Duplicated selected words')
+    toast('info', 'Duplicated selected words')
   }, [selectedWordIndices, words])
 
   const handleSeek = useCallback((time: number) => {

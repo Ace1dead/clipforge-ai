@@ -4,8 +4,8 @@ import {
   scoreAllWindows,
   rankHighlightsByVirality,
   getScoreColor,
-  type AudioAnalysisWindow,
 } from './viralityScorer'
+import type { AudioAnalysisWindow } from './audioAnalyzer'
 
 function makeWindows(count: number, baseScore = 0.5): AudioAnalysisWindow[] {
   return Array.from({ length: count }, (_, i) => ({

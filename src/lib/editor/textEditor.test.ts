@@ -5,9 +5,9 @@ import {
   segmentsToClipRanges,
   findWordAtTime,
   findWordBySearch,
-  type WordTimestamp,
   type TextEditCommand,
 } from './textEditor'
+import type { WordTimestamp } from './transcript'
 
 function makeWords(count: number, startSec = 0): WordTimestamp[] {
   let time = startSec

@@ -203,13 +203,13 @@ export function rankHighlightsByVirality(
   const variance = allScores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / allScores.length
   const stdDev = Math.sqrt(variance)
 
-  const maxScore = inRange.reduce((best, w, i) => {
+  const maxScore = inRange.reduce<{ total: number; factors: ViralityFactor[]; tier: ViralityScore['tier']; label: string }>((best, w, i) => {
     const idx = windows.indexOf(w)
     const scored = scoreWindow(windows, idx, mean, stdDev, weights)
     return scored.total > best.total ? scored : best
-  }, { total: 0, factors: [], tier: 'low' as const, label: '' })
+  }, { total: 0, factors: [], tier: 'low', label: '' })
 
-  return maxScore
+  return maxScore as ViralityScore
 }
 
 export function getScoreColor(score: number): string {
