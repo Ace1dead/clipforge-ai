@@ -178,13 +178,16 @@ function wrapLines(words: RenderWord[], widths: number[], maxWidth: number, px: 
 }
 
 function activeIndexOf(group: RenderWord[], t: number): number {
+  // Primary: find word that's currently being spoken (with small tolerance)
   for (let i = 0; i < group.length; i++) {
     if (t >= group[i].start - 0.02 && t <= group[i].end + 0.02) return i
   }
-  for (let i = group.length - 1; i >= 0; i--) {
-    if (t >= group[i].start) return i
+  // Fallback: find the most recent word that has started
+  let lastStarted = -1
+  for (let i = 0; i < group.length; i++) {
+    if (t >= group[i].start) lastStarted = i
   }
-  return -1
+  return lastStarted
 }
 
 export function drawCaptions(

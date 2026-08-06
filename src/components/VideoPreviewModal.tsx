@@ -4,7 +4,7 @@
  * User can adjust settings and then confirm export.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX } from 'lucide-react'
 import { Button, Select, Field, Slider, Badge, ProgressBar, toast } from './ui'
 import { createDrawFrame, renderPreviewFrame, type CompositorConfig } from '../lib/compositor'
@@ -64,8 +64,8 @@ export function VideoPreviewModal({
   const outW = platform === 'tiktok' || platform === 'reels' || platform === 'shorts' ? 1080 : 1920
   const outH = platform === 'tiktok' || platform === 'reels' || platform === 'shorts' ? 1920 : 1080
 
-  // Build compositor config
-  const compositorConfig: CompositorConfig = {
+  // Memoize config so it only changes when settings change, not every render
+  const compositorConfig: CompositorConfig = useMemo(() => ({
     clipDuration: duration,
     words,
     captionStyleId: captionStyle,
@@ -75,12 +75,10 @@ export function VideoPreviewModal({
     platform,
     fadeDuration: 0.5,
     hookDuration: 3,
-  }
+  }), [captionStyle, editStyle, colorSkin, duration, words, hooks, platform])
 
-  // Create draw function
-  const drawFrame = useCallback(() => {
-    return createDrawFrame(compositorConfig)
-  }, [captionStyle, editStyle, colorSkin, duration, words, hooks, platform])
+  // Create draw function — only recreated when config actually changes
+  const drawFrame = useMemo(() => createDrawFrame(compositorConfig), [compositorConfig])
 
   // Canvas resize
   useEffect(() => {
@@ -91,7 +89,7 @@ export function VideoPreviewModal({
     }
   }, [outW, outH])
 
-  // Draw loop
+  // Draw loop — uses stable drawFrame reference
   useEffect(() => {
     if (!open) return
 
@@ -102,19 +100,17 @@ export function VideoPreviewModal({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const drawFn = createDrawFrame(compositorConfig)
-
     const tick = () => {
       const t = video.currentTime - trimStart
       if (t >= 0 && t <= duration) {
-        renderPreviewFrame(ctx, video, t, canvas.width, canvas.height, drawFn)
+        renderPreviewFrame(ctx, video, t, canvas.width, canvas.height, drawFrame)
       }
       rafRef.current = requestAnimationFrame(tick)
     }
 
     rafRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [open, compositorConfig, trimStart, duration])
+  }, [open, drawFrame, trimStart, duration])
 
   // Video playback sync
   useEffect(() => {
@@ -122,12 +118,16 @@ export function VideoPreviewModal({
     if (!video || !open) return
 
     if (playing) {
-      video.currentTime = trimStart + time
-      video.play().catch(() => setPlaying(false))
+      // Use functional state update to get latest time for seeking
+      setTime((prevTime) => {
+        video.currentTime = trimStart + prevTime
+        video.play().catch(() => setPlaying(false))
+        return prevTime
+      })
     } else {
       video.pause()
     }
-  }, [playing, open])
+  }, [playing, open, trimStart])
 
   // Time update
   useEffect(() => {
@@ -247,7 +247,7 @@ export function VideoPreviewModal({
           <Field label="Color Skin">
             <Select value={colorSkin} onChange={(e) => setColorSkin(e.target.value as ColorSkinId)}>
               {Object.entries(COLOR_SKINS).map(([id, skin]) => (
-                <option key={id} value={id}>{id.charAt(0).toUpperCase() + id.slice(1)}</option>
+                <option key={id} value={id}>{skin.name}</option>
               ))}
             </Select>
           </Field>
@@ -259,7 +259,7 @@ export function VideoPreviewModal({
               icon={exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               loading={exporting}
               disabled={exporting}
-              onClick={() => onExport(compositorConfig)}
+              onClick={() => onExport({ ...compositorConfig })}
             >
               {exporting ? `Exporting ${Math.round(exportProgress * 100)}%...` : 'Export Video'}
             </Button>

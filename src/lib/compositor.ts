@@ -61,18 +61,23 @@ export function createDrawFrame(config: CompositorConfig) {
   const effects: EffectFn[] = []
 
   if (style) {
-    if (style.screenShake.enabled) effects.push(screenShake(style.screenShake.intensity, style.screenShake.frequency))
+    // Base effects — always applied when enabled
+    const baseShake = style.screenShake.enabled
+    const baseGlitch = style.glitch.enabled
+
+    if (baseShake) effects.push(screenShake(style.screenShake.intensity, style.screenShake.frequency))
     if (style.chromaticAberration.enabled) effects.push(chromaticAberration(style.chromaticAberration.offset))
     if (style.vignette.enabled) effects.push(vignette(style.vignette.strength, style.vignette.radius))
     if (style.filmGrain.enabled) effects.push(filmGrain(style.filmGrain.intensity))
     if (style.exposurePulse.enabled) effects.push(exposurePulse(style.exposurePulse.stops, style.exposurePulse.decayFrames))
     if (style.scanlines.enabled) effects.push(scanlines(style.scanlines.density, style.scanlines.opacity))
-    if (style.glitch.enabled) effects.push(glitchEffect(style.glitch.intensity))
-    // Audio-reactive effects use beatIntensity
-    if (style.audioReactive.beatShake && beatIntensity > 0.1) {
+    if (baseGlitch) effects.push(glitchEffect(style.glitch.intensity))
+
+    // Audio-reactive effects — only add if not already present from base effects
+    if (style.audioReactive.beatShake && beatIntensity > 0.1 && !baseShake) {
       effects.push(screenShake(style.screenShake.intensity || 0.8, style.screenShake.frequency || 30))
     }
-    if (style.audioReactive.beatGlitch && beatIntensity > 0.3) {
+    if (style.audioReactive.beatGlitch && beatIntensity > 0.3 && !baseGlitch) {
       effects.push(glitchEffect(style.glitch.intensity || 0.4))
     }
   }

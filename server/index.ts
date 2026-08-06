@@ -49,8 +49,17 @@ app.use((_req, res, next) => {
 
 app.use(express.json({ limit: '10mb' }));
 
-// Simple rate limiting middleware
+// Simple rate limiting middleware with periodic cleanup
 const rateLimit = new Map<string, { count: number; resetAt: number }>();
+
+// Cleanup stale entries every 5 minutes to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimit) {
+    if (now > entry.resetAt) rateLimit.delete(ip);
+  }
+}, 5 * 60 * 1000);
+
 function rateLimitMiddleware(maxRequests = 100, windowMs = 60000) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const ip = req.ip || req.connection.remoteAddress || 'unknown';

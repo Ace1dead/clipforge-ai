@@ -55,6 +55,7 @@ export function Editor() {
   const duration = project?.duration ?? 0
   const outDims = OUT[res]
   const words = project?.words ?? []
+  const platform = res === '9:16' ? 'tiktok' : 'youtube'
 
   useEffect(() => {
     if (project && project.videoUrl) {
@@ -203,12 +204,23 @@ export function Editor() {
     setExporting(true)
     setProgress(0)
     try {
+      const drawFrame = createDrawFrame({
+        clipDuration: duration,
+        words,
+        captionStyleId: project.captionStyle ?? 'pop-classic',
+        editStyle: previewEditStyle,
+        colorSkin: previewColorSkin,
+        hooks: [],
+        platform,
+        fadeDuration: 0.5,
+        hookDuration: 3,
+      })
       const blob = await renderComposition({
         sources: [{ url: project.videoUrl }],
         outW: outDims.w, outH: outDims.h,
         bitrate: 8_000_000,
         audioLayers: project.voiceoverUrl ? [{ url: project.voiceoverUrl, gain: 1 }] : [],
-        draw: (ctx, t, w, h) => drawCaptions(ctx, words, getStyle(project.captionStyle), t, w, h),
+        draw: (ctx, t, w, h) => drawFrame({ ctx, time: t, w, h }),
         onProgress: setProgress,
       })
       downloadBlob(blob, `${(project.name || 'clip').replace(/\s+/g, '-')}_final.webm`)

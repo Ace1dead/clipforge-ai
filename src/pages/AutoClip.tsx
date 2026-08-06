@@ -238,70 +238,17 @@ export function AutoClip() {
     const timedWords = toTimedWords(wordTimestamps)
 
     try {
-      const draw = (ctx: CanvasRenderingContext2D, time: number, w: number, h: number) => {
-          // HOOK TEXT (first 3 seconds) - big animated text
-          if (time < 3 && clip.hooks[0]) {
-            const alpha = time < 0.5 ? time * 2 : time > 2.5 ? (3 - time) * 2 : 1
-            const scale = time < 0.3 ? 0.5 + time * 1.67 : 1
-            ctx.save()
-            ctx.globalAlpha = Math.max(0, Math.min(1, alpha))
-            ctx.translate(w / 2, h * 0.35)
-            ctx.scale(scale, scale)
-            const text = clip.hooks[0]
-            ctx.font = `bold ${Math.round(w * 0.065)}px "Inter", system-ui, sans-serif`
-            const metrics = ctx.measureText(text)
-            const pw = metrics.width + w * 0.06
-            const ph = w * 0.09
-            ctx.fillStyle = 'rgba(94, 106, 210, 0.85)'
-            roundRect(ctx, -pw / 2, -ph / 2, pw, ph, w * 0.02)
-            ctx.fill()
-            ctx.fillStyle = '#ffffff'
-            ctx.textAlign = 'center'
-            ctx.textBaseline = 'middle'
-            ctx.fillText(text, 0, 0)
-            ctx.restore()
-          }
-
-          // GRADIENT OVERLAY (subtle top-to-bottom)
-          const grad = ctx.createLinearGradient(0, 0, 0, h)
-          grad.addColorStop(0, 'rgba(0,0,0,0.15)')
-          grad.addColorStop(0.3, 'rgba(0,0,0,0)')
-          grad.addColorStop(0.7, 'rgba(0,0,0,0)')
-          grad.addColorStop(1, 'rgba(0,0,0,0.3)')
-          ctx.fillStyle = grad
-          ctx.fillRect(0, 0, w, h)
-
-          // FADE IN/OUT (first/last 0.5s)
-          const clipDur = clip.end - clip.start
-          if (time < 0.5) {
-            ctx.fillStyle = `rgba(0,0,0,${1 - time * 2})`
-            ctx.fillRect(0, 0, w, h)
-          } else if (time > clipDur - 0.5) {
-            ctx.fillStyle = `rgba(0,0,0,${(time - (clipDur - 0.5)) * 2})`
-            ctx.fillRect(0, 0, w, h)
-          }
-
-          // PLATFORM BADGE (bottom-left)
-          ctx.save()
-          ctx.font = `bold ${Math.round(w * 0.028)}px "Inter", system-ui, sans-serif`
-          const badge = clip.platform.toUpperCase()
-          const bm = ctx.measureText(badge)
-          const bx = w * 0.04
-          const by = h - w * 0.06
-          ctx.fillStyle = 'rgba(94, 106, 210, 0.8)'
-          roundRect(ctx, bx - w * 0.01, by - w * 0.02, bm.width + w * 0.02, w * 0.035, w * 0.008)
-          ctx.fill()
-          ctx.fillStyle = '#ffffff'
-          ctx.textAlign = 'left'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(badge, bx, by)
-          ctx.restore()
-
-          // CAPTIONS (if we have word timestamps)
-          if (timedWords.length > 0) {
-            drawCaptions(ctx, timedWords, getStyle(captionStyleId), time, w, h)
-          }
-        }
+      const drawFrame = createDrawFrame({
+        clipDuration: clip.end - clip.start,
+        words: timedWords,
+        captionStyleId,
+        editStyle: previewEditStyle,
+        colorSkin: previewColorSkin,
+        hooks: clip.hooks,
+        platform: clip.platform,
+        fadeDuration: 0.5,
+        hookDuration: 3,
+      })
 
       const baseOpts = {
         sources: [{ url: videoUrl, fit: 'cover' as const }],
@@ -317,13 +264,17 @@ export function AutoClip() {
         blob = await renderJumpCut({
           ...baseOpts,
           trim: { start: clip.start, end: clip.end },
-          draw,
+          draw: (ctx, time, w, h) => drawFrame({ ctx, time, w, h }),
           timeBase: clip.start,
           segments: segs,
           format: 'mp4',
         })
       } else {
-        blob = await renderComposition({ ...baseOpts, trim: { start: clip.start, end: clip.end }, draw })
+        blob = await renderComposition({
+          ...baseOpts,
+          trim: { start: clip.start, end: clip.end },
+          draw: (ctx, time, w, h) => drawFrame({ ctx, time, w, h }),
+        })
       }
 
       // LUFS normalize the exported audio to -14 LUFS (streaming standard)
@@ -348,7 +299,7 @@ export function AutoClip() {
       setExportingClipId(null)
       setStep('results')
     }
-  }, [videoUrl, captionStyles, wordTimestamps])
+  }, [videoUrl, captionStyles, wordTimestamps, previewEditStyle, previewColorSkin, jumpCut, silences])
 
   const exportClipWithConfig = useCallback(async (clip: ClipResult, config: CompositorConfig) => {
     if (!videoUrl) return
@@ -389,20 +340,23 @@ export function AutoClip() {
       try {
         const captionStyleId = captionStyles[clip.id] || clip.captionStyle || 'pop-classic'
         const timedWords = toTimedWords(wordTimestamps)
+        const drawFrame = createDrawFrame({
+          clipDuration: clip.end - clip.start,
+          words: timedWords,
+          captionStyleId,
+          editStyle: previewEditStyle,
+          colorSkin: previewColorSkin,
+          hooks: clip.hooks,
+          platform: clip.platform,
+          fadeDuration: 0.5,
+          hookDuration: 3,
+        })
         const blob = await renderComposition({
           sources: [{ url: videoUrl, fit: 'cover' }],
           outW: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1080 : 1920,
           outH: clip.platform === 'tiktok' || clip.platform === 'reels' ? 1920 : 1080,
           trim: { start: clip.start, end: clip.end },
-          draw: (ctx, time, w, h) => {
-            if (time < 0.5) { ctx.fillStyle = `rgba(0,0,0,${1 - time * 2})`; ctx.fillRect(0, 0, w, h) }
-            else if (time > (clip.end - clip.start) - 0.5) { ctx.fillStyle = `rgba(0,0,0,${(time - ((clip.end - clip.start) - 0.5)) * 2})`; ctx.fillRect(0, 0, w, h) }
-            const grad = ctx.createLinearGradient(0, 0, 0, h)
-            grad.addColorStop(0, 'rgba(0,0,0,0.15)')
-            grad.addColorStop(1, 'rgba(0,0,0,0.3)')
-            ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h)
-            if (timedWords.length > 0) drawCaptions(ctx, timedWords, getStyle(captionStyleId), time, w, h)
-          },
+          draw: (ctx, time, w, h) => drawFrame({ ctx, time, w, h }),
           muteVideoAudio: false,
         })
         const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
@@ -412,7 +366,7 @@ export function AutoClip() {
     }
     setExportingAll(false)
     toast('success', `Exported ${exported}/${clips.length} clips`)
-  }, [videoUrl, clips, captionStyles, wordTimestamps])
+  }, [videoUrl, clips, captionStyles, wordTimestamps, previewEditStyle, previewColorSkin])
 
   const openInEditor = useCallback((clip: ClipResult) => {
     if (!videoUrl) return

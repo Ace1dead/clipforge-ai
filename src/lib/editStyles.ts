@@ -18,7 +18,7 @@ export type EditStyleId =
   | 'music_video'
   | 'sports'
 
-export type ColorSkinId = 'candy' | 'edgy' | 'lofi' | 'classic'
+export type ColorSkinId = 'candy' | 'edgy' | 'lofi' | 'classic' | 'teal_orange' | 'noir' | 'bleach' | 'vintage' | 'cinematic' | 'moody'
 
 export interface EditStyle {
   id: EditStyleId
@@ -289,6 +289,42 @@ export const COLOR_SKIN_OPTIONS: Record<ColorSkinId, { name: string; description
     description: 'Neutral, balanced grading. Clean and professional.',
     grade: COLOR_SKINS.classic,
     icon: '🎬',
+  },
+  teal_orange: {
+    name: 'Teal & Orange',
+    description: 'Hollywood blockbuster split-tone. Warm skin, cool shadows.',
+    grade: COLOR_SKINS.teal_orange,
+    icon: '🎬',
+  },
+  noir: {
+    name: 'Noir',
+    description: 'High contrast black and white with deep shadows.',
+    grade: COLOR_SKINS.noir,
+    icon: '🖤',
+  },
+  bleach: {
+    name: 'Bleach Bypass',
+    description: 'Desaturated, high contrast cinematic look. Think Saving Private Ryan.',
+    grade: COLOR_SKINS.bleach,
+    icon: '🎞️',
+  },
+  vintage: {
+    name: 'Vintage',
+    description: 'Warm, faded film look with sepia tones.',
+    grade: COLOR_SKINS.vintage,
+    icon: '📼',
+  },
+  cinematic: {
+    name: 'Cinematic',
+    description: 'Professional film look with teal/orange color science.',
+    grade: COLOR_SKINS.cinematic,
+    icon: '🎬',
+  },
+  moody: {
+    name: 'Moody',
+    description: 'Dark, atmospheric grading with deep purples and blues.',
+    grade: COLOR_SKINS.moody,
+    icon: '🌙',
   },
 }
 
