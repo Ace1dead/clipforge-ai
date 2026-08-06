@@ -5,7 +5,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX, Share2, ExternalLink, Copy, Check } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX, Share2, ExternalLink, Copy, Check, FileDown } from 'lucide-react'
 import { Button, Select, Field, Slider, Badge, ProgressBar, Textarea, toast } from './ui'
 import { createDrawFrame, renderPreviewFrame, type CompositorConfig } from '../lib/compositor'
 import { EDIT_STYLES, type EditStyleId, type ColorSkinId } from '../lib/editStyles'
@@ -13,6 +13,7 @@ import { COLOR_SKINS } from '../lib/effects'
 import { CAPTION_STYLES } from '../lib/captions'
 import { fmtTime } from '../lib/format'
 import { generateShareLink, generateHashtags, validateCaption, type PlatformConfig, getPlatformConfig } from '../lib/socialScheduler'
+import { generatePremiereXML, generateDaVinciXML, generateFCPXML, type TimelineClip, type TimelineTrack } from '../lib/xmlExport'
 import type { TimedWord } from '../lib/tts'
 
 const PLATFORMS = [
@@ -94,6 +95,36 @@ export function VideoPreviewModal({
 
   const sharePlatformConfig = getPlatformConfig(selectedPlatform)
   const captionValidation = shareCaption ? validateCaption(shareCaption, selectedPlatform) : { valid: true }
+
+  const exportXML = (format: 'premiere' | 'davinci' | 'fcp') => {
+    const clip: TimelineClip = {
+      id: 'clip-1',
+      name: clipName,
+      start: 0,
+      end: duration,
+      duration,
+      sourceStart: 0,
+      sourceEnd: duration,
+      filePath: `/${clipName.replace(/\s+/g, '_')}.mp4`,
+      trackIndex: 0,
+    }
+    const tracks: TimelineTrack[] = [{ index: 0, name: 'V1', type: 'video', clips: [clip] }]
+    const settings = { width: outW, height: outH, fps: 30 }
+    const xml = format === 'premiere' ? generatePremiereXML(tracks, settings)
+      : format === 'davinci' ? generateDaVinciXML(tracks, settings)
+      : generateFCPXML(tracks, settings)
+    const ext = format === 'fcp' ? 'fcpxml' : 'xml'
+    const blob = new Blob([xml], { type: 'application/xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${clipName.replace(/\s+/g, '_')}_${format}.${ext}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    toast('success', `${format === 'premiere' ? 'Premiere Pro' : format === 'davinci' ? 'DaVinci Resolve' : 'Final Cut Pro'} timeline exported`)
+  }
 
   // Memoize config so it only changes when settings change, not every render
   const compositorConfig: CompositorConfig = useMemo(() => ({
@@ -374,6 +405,19 @@ export function VideoPreviewModal({
                 <p className="text-[10px] text-faint text-center">
                   Video downloaded. Upload it on the platform.
                 </p>
+
+                {/* NLE Timeline Export */}
+                <div className="border-t border-white/10 pt-3 mt-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileDown size={13} className="text-faint" />
+                    <span className="text-[11px] font-medium text-faint">Export Timeline for NLE</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Button variant="ghost" size="sm" className="flex-1 text-[10px]" onClick={() => exportXML('premiere')}>Premiere Pro</Button>
+                    <Button variant="ghost" size="sm" className="flex-1 text-[10px]" onClick={() => exportXML('davinci')}>DaVinci</Button>
+                    <Button variant="ghost" size="sm" className="flex-1 text-[10px]" onClick={() => exportXML('fcp')}>Final Cut</Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
