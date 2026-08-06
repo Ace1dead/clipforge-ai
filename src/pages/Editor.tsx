@@ -69,7 +69,7 @@ export function Editor() {
     if (canvas) { canvas.width = outDims.w; canvas.height = outDims.h }
   }, [res])
 
-  // Read template config from Templates page
+  // Read template config from Templates page and apply all preset settings
   useEffect(() => {
     try {
       const raw = localStorage.getItem('cf_template_config')
@@ -78,6 +78,19 @@ export function Editor() {
         localStorage.removeItem('cf_template_config')
         if (cfg.name) {
           toast('info', `Template loaded: ${cfg.name}`, 'Upload a video to start editing')
+        }
+        // Apply preset settings
+        if (cfg.presetId) {
+          import('../lib/viralPresets').then(({ getPresetById }) => {
+            const preset = getPresetById(cfg.presetId)
+            if (preset) {
+              setPreviewEditStyle(preset.editStyle as EditStyleId)
+              setPreviewColorSkin(preset.color.skin as ColorSkinId)
+              if (preset.captions.style) {
+                update({ captionStyle: preset.captions.style })
+              }
+            }
+          })
         }
       }
     } catch { /* ignore */ }

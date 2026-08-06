@@ -1,180 +1,106 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, Play, Download, Clock, Zap, Film, Type, Mic, Layers, Wand2 } from 'lucide-react'
-import { Button, Card, Badge, toast } from '../components/ui'
+import { Sparkles, Play, Download, Clock, Zap, Film, Type, Mic, Layers, Wand2, Search, Filter } from 'lucide-react'
+import { Button, Card, Badge, toast, Input } from '../components/ui'
+import { ALL_VIRAL_PRESETS, type ViralPreset, type ViralCategory } from '../lib/viralPresets'
+import { getPresetSummaries, autoSuggestPreset } from '../lib/templateEngine'
 
-interface Template {
-  id: string
-  name: string
-  category: string
-  description: string
-  platforms: string[]
-  duration: string
-  difficulty: 'Easy' | 'Medium' | 'Advanced'
-  features: string[]
-  preview: string
-}
-
-const TEMPLATES: Template[] = [
-  {
-    id: 'viral-hook',
-    name: 'Viral Hook Short',
-    category: 'Short-Form',
-    description: '3-second hook + punchline structure optimized for TikTok/Reels. Grabs attention instantly.',
-    platforms: ['TikTok', 'Reels', 'Shorts'],
-    duration: '15-30s',
-    difficulty: 'Easy',
-    features: ['Bold text hook', 'Trending audio', 'Quick cuts', 'CTA overlay'],
-    preview: '🎯',
-  },
-  {
-    id: 'story-time',
-    name: 'Story Time',
-    category: 'Short-Form',
-    description: 'Reddit/text story format with narration, captions, and background gameplay footage.',
-    platforms: ['TikTok', 'Reels', 'YouTube'],
-    duration: '60-180s',
-    difficulty: 'Easy',
-    features: ['TTS narration', 'Animated captions', 'B-roll sync', 'Emoji reactions'],
-    preview: '📖',
-  },
-  {
-    id: 'before-after',
-    name: 'Before / After',
-    category: 'Short-Form',
-    description: 'Split-screen transformation reveal. Perfect for tutorials, makeovers, and comparisons.',
-    platforms: ['TikTok', 'Reels', 'Shorts'],
-    duration: '15-30s',
-    difficulty: 'Medium',
-    features: ['Split layout', 'Swipe transition', 'Music sync', 'Text labels'],
-    preview: '🔄',
-  },
-  {
-    id: 'ai-explainer',
-    name: 'AI Explainer',
-    category: 'Educational',
-    description: 'Script-to-video with AI voiceover, stock footage, and animated captions.',
-    platforms: ['YouTube', 'LinkedIn', 'Twitter'],
-    duration: '60-120s',
-    difficulty: 'Medium',
-    features: ['AI voiceover', 'Stock B-roll', 'Key points', 'End card'],
-    preview: '🎓',
-  },
-  {
-    id: 'talking-head',
-    name: 'Talking Head Pro',
-    category: 'Educational',
-    description: 'Face-to-camera with auto-captions, b-roll inserts, and lower thirds.',
-    platforms: ['YouTube', 'Reels', 'TikTok'],
-    duration: '30-90s',
-    difficulty: 'Easy',
-    features: ['Auto captions', 'B-roll cutaway', 'Lower third', 'Intro/outro'],
-    preview: '🗣️',
-  },
-  {
-    id: 'product-showcase',
-    name: 'Product Showcase',
-    category: 'Marketing',
-    description: 'Clean product reveal with feature callouts, pricing, and CTA.',
-    platforms: ['Instagram', 'TikTok', 'Website'],
-    duration: '15-30s',
-    difficulty: 'Medium',
-    features: ['Zoom pan', 'Feature text', 'Price tag', 'Shop CTA'],
-    preview: '📦',
-  },
-  {
-    id: 'meme-edit',
-    name: 'Meme Edit',
-    category: 'Entertainment',
-    description: 'Fast-paced meme compilation with trending sounds and reaction clips.',
-    platforms: ['TikTok', 'Reels', 'Twitter'],
-    duration: '10-30s',
-    difficulty: 'Easy',
-    features: ['Meme templates', 'Sound effects', 'Zoom punch', 'Text-to-speech'],
-    preview: '😂',
-  },
-  {
-    id: 'tutorial-step',
-    name: 'Step-by-Step Tutorial',
-    category: 'Educational',
-    description: 'Numbered steps with screen recording, voiceover, and progress indicators.',
-    platforms: ['YouTube', 'TikTok', 'LinkedIn'],
-    duration: '60-180s',
-    difficulty: 'Advanced',
-    features: ['Step counter', 'Screen record', 'Highlight zoom', 'Chapter markers'],
-    preview: '📋',
-  },
-  {
-    id: 'cinematic-reel',
-    name: 'Cinematic Reel',
-    category: 'Creative',
-    description: 'Film-style montage with letterbox, color grading, and dramatic transitions.',
-    platforms: ['Instagram', 'YouTube', 'Vimeo'],
-    duration: '15-60s',
-    difficulty: 'Advanced',
-    features: ['Letterbox', 'Color grade', 'Speed ramps', 'Film grain'],
-    preview: '🎬',
-  },
-  {
-    id: 'comparison',
-    name: 'VS Comparison',
-    category: 'Marketing',
-    description: 'Side-by-side product/service comparison with score tracking.',
-    platforms: ['YouTube', 'TikTok', 'Instagram'],
-    duration: '30-60s',
-    difficulty: 'Medium',
-    features: ['Split screen', 'Score counter', 'Pros/cons', 'Winner reveal'],
-    preview: '⚔️',
-  },
-  {
-    id: 'behind-scenes',
-    name: 'Behind the Scenes',
-    category: 'Entertainment',
-    description: 'Raw footage with casual narration, showing the creative process.',
-    platforms: ['TikTok', 'Reels', 'YouTube'],
-    duration: '30-90s',
-    difficulty: 'Easy',
-    features: ['Casual style', 'Raw audio', 'Day-in-life', 'Vlog captions'],
-    preview: '🎥',
-  },
-  {
-    id: 'data-viz',
-    name: 'Data Visualization',
-    category: 'Educational',
-    description: 'Animated charts and infographics with voiceover explaining key stats.',
-    platforms: ['LinkedIn', 'Twitter', 'YouTube'],
-    duration: '30-60s',
-    difficulty: 'Advanced',
-    features: ['Animated charts', 'Stat callouts', 'Clean design', 'Data source'],
-    preview: '📊',
-  },
+const CATEGORY_FILTERS: Array<{ id: string; label: string }> = [
+  { id: 'all', label: 'All Templates' },
+  { id: 'podcast', label: 'Podcast' },
+  { id: 'gaming', label: 'Gaming' },
+  { id: 'storytelling', label: 'Storytelling' },
+  { id: 'business', label: 'Business' },
+  { id: 'fitness', label: 'Fitness' },
+  { id: 'music', label: 'Music' },
+  { id: 'educational', label: 'Educational' },
+  { id: 'reaction', label: 'Reaction' },
 ]
 
-const CATEGORIES = ['All', 'Short-Form', 'Educational', 'Marketing', 'Entertainment', 'Creative']
+const PLATFORM_BADGES: Record<string, string> = {
+  tiktok: 'TikTok',
+  reels: 'Reels',
+  shorts: 'Shorts',
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  podcast: '#5e6ad2',
+  gaming: '#00ff88',
+  storytelling: '#22d3ee',
+  business: '#FFD60A',
+  fitness: '#ef4444',
+  music: '#ec4899',
+  educational: '#22d3ee',
+  reaction: '#ef4444',
+}
+
+function getDifficultyLabel(preset: ViralPreset): 'Easy' | 'Medium' | 'Advanced' {
+  const { editStyle, audio } = preset
+  if (editStyle === 'documentary' || editStyle === 'kinetic_typography') return 'Easy'
+  if (editStyle === 'music_video' || editStyle === 'compositing') return 'Advanced'
+  if (audio.sfxOnTransitions && editStyle === 'sports') return 'Advanced'
+  return 'Medium'
+}
+
+function getFeatureTags(preset: ViralPreset): string[] {
+  const tags: string[] = []
+  if (preset.captions.emphasisRule === 'every-word') tags.push('Word-by-word captions')
+  if (preset.captions.uppercase) tags.push('ALL CAPS')
+  if (preset.motion.shakeOnBeat) tags.push('Screen shake')
+  if (preset.motion.zoomPunchIn > 1.05) tags.push('Zoom punch')
+  if (preset.audio.sfxOnTransitions) tags.push('SFX on cuts')
+  if (preset.overlays.progressBar) tags.push('Progress bar')
+  if (preset.hooks.length > 0) tags.push('Hook overlay')
+  if (preset.audio.normalizeTarget <= -14) tags.push('LUFS normalized')
+  if (preset.color.contrast > 1.15) tags.push('High contrast')
+  if (preset.timing.loopOverlap > 1.5) tags.push('Loop-optimized')
+  if (preset.audio.noiseReduction) tags.push('Noise reduction')
+  return tags.slice(0, 4)
+}
 
 export function Templates() {
   const navigate = useNavigate()
-  const [category, setCategory] = useState('All')
-  const [selected, setSelected] = useState<Template | null>(null)
+  const [category, setCategory] = useState('all')
+  const [selected, setSelected] = useState<ViralPreset | null>(null)
+  const [search, setSearch] = useState('')
 
-  const filtered = category === 'All' ? TEMPLATES : TEMPLATES.filter(t => t.category === category)
+  const filtered = useMemo(() => {
+    let presets = ALL_VIRAL_PRESETS
+    if (category !== 'all') {
+      presets = presets.filter(p => p.category === category)
+    }
+    if (search) {
+      const q = search.toLowerCase()
+      presets = presets.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q)
+      )
+    }
+    return presets
+  }, [category, search])
 
-  const applyTemplate = (template: Template) => {
+  const applyTemplate = (preset: ViralPreset) => {
     // Store template config in localStorage for Editor to pick up
     const templateConfig = {
-      name: template.name,
-      category: template.category,
-      platforms: template.platforms,
-      features: template.features,
-      suggestedStyle: template.category === 'Short-Form' ? 'velocity'
-        : template.category === 'Educational' ? 'kinetic_typography'
-        : template.category === 'Creative' ? 'compositing'
-        : template.category === 'Entertainment' ? 'raw_impact'
-        : 'flow_match',
-      suggestedDuration: template.duration,
+      presetId: preset.id,
+      name: preset.name,
+      category: preset.category,
+      platforms: preset.platforms.map(p => PLATFORM_BADGES[p] || p),
+      editStyle: preset.editStyle,
+      colorSkin: preset.color.skin,
+      captionStyle: preset.captions.style,
+      suggestedDuration: `${preset.timing.minClipLength}-${preset.timing.maxClipLength}s`,
+      timing: preset.timing,
+      motion: preset.motion,
+      captions: preset.captions,
+      audio: preset.audio,
+      color: preset.color,
+      hooks: preset.hooks,
+      overlays: preset.overlays,
     }
     localStorage.setItem('cf_template_config', JSON.stringify(templateConfig))
-    toast('info', `Template "${template.name}" applied — upload a video in the Editor`)
+    toast('info', `Template "${preset.name}" applied — upload a video in the Editor`)
     navigate('/editor')
   }
 
@@ -184,116 +110,227 @@ export function Templates() {
         <span className="w-10 h-10 rounded-xl accent-gradient flex items-center justify-center text-white"><Layers size={20} /></span>
         <div>
           <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-            Template Gallery
-            <Badge tone="accent">{TEMPLATES.length} templates</Badge>
+            Viral Template Engine
+            <Badge tone="accent">{ALL_VIRAL_PRESETS.length} presets</Badge>
           </h1>
-          <p className="text-[13px] text-muted">Ready-made video templates for every content style. Pick one and start creating.</p>
+          <p className="text-[13px] text-muted">Research-backed editing presets for TikTok, Reels, and Shorts. Each preset encodes exact timing, motion, captions, and audio rules.</p>
         </div>
       </div>
 
-      {/* Category Filter */}
-      <div className="flex items-center gap-2 mt-6 overflow-x-auto pb-2">
-        {CATEGORIES.map(cat => (
-          <button
-            key={cat}
-            onClick={() => setCategory(cat)}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border whitespace-nowrap transition-colors ${
-              category === cat
-                ? 'bg-accent/20 border-accent/40 text-accent'
-                : 'bg-elevated border-white/10 text-muted hover:border-white/20'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
+      {/* Search + Category Filter */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mt-6">
+        <div className="relative flex-1 w-full sm:max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+          <input
+            type="text"
+            placeholder="Search templates..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 rounded-lg text-[13px] bg-elevated border border-border text-fg placeholder:text-faint focus:border-accent/40 focus:outline-none transition-colors"
+          />
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 flex-1">
+          {CATEGORY_FILTERS.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setCategory(cat.id)}
+              className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border whitespace-nowrap transition-colors ${
+                category === cat.id
+                  ? 'bg-accent/20 border-accent/40 text-accent'
+                  : 'bg-elevated border-white/10 text-muted hover:border-white/20'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Templates Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-        {filtered.map(template => (
-          <div
-            key={template.id}
-            onClick={() => setSelected(template)}
-            className={`p-0 cursor-pointer transition-all hover:border-accent/30 rounded-xl border ${
-              selected?.id === template.id ? 'border-accent/40 bg-accent/5' : 'border-border'
-            }`}
-          >
-            <Card className="p-5 border-0">
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-xl bg-elevated flex items-center justify-center text-2xl shrink-0">
-                {template.preview}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-[14px]">{template.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge tone="accent">{template.category}</Badge>
-                  <Badge tone="neutral">{template.difficulty}</Badge>
+        {filtered.map(preset => {
+          const difficulty = getDifficultyLabel(preset)
+          const features = getFeatureTags(preset)
+          const accentColor = CATEGORY_COLORS[preset.category] || '#5e6ad2'
+
+          return (
+            <div
+              key={preset.id}
+              onClick={() => setSelected(preset)}
+              className={`p-0 cursor-pointer transition-all hover:border-accent/30 rounded-xl border ${
+                selected?.id === preset.id ? 'border-accent/40 bg-accent/5' : 'border-border'
+              }`}
+            >
+              <Card className="p-5 border-0">
+                <div className="flex items-start gap-3">
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                    style={{ backgroundColor: `${accentColor}20` }}
+                  >
+                    {preset.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-[14px]">{preset.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge tone="accent">{preset.category}</Badge>
+                      <Badge tone="neutral">{difficulty}</Badge>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <p className="text-[12px] text-muted mt-3 line-clamp-2">{template.description}</p>
+                <p className="text-[12px] text-muted mt-3 line-clamp-2">{preset.description}</p>
 
-            <div className="flex items-center gap-3 mt-3 text-[11px] text-faint">
-              <span className="flex items-center gap-1"><Clock size={10} /> {template.duration}</span>
-              <span className="flex items-center gap-1"><Film size={10} /> {template.platforms.join(', ')}</span>
-            </div>
+                <div className="flex items-center gap-3 mt-3 text-[11px] text-faint">
+                  <span className="flex items-center gap-1">
+                    <Clock size={10} />
+                    {preset.timing.minClipLength}-{preset.timing.maxClipLength}s
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Film size={10} />
+                    {preset.platforms.map(p => PLATFORM_BADGES[p] || p).join(', ')}
+                  </span>
+                </div>
 
-            <div className="flex flex-wrap gap-1 mt-3">
-              {template.features.map(f => (
-                <span key={f} className="px-2 py-0.5 rounded-full bg-elevated text-[10px] text-faint border border-white/5">{f}</span>
-              ))}
-            </div>
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {features.map(f => (
+                    <span key={f} className="px-2 py-0.5 rounded-full bg-elevated text-[10px] text-faint border border-white/5">{f}</span>
+                  ))}
+                </div>
 
-            <div className="flex gap-2 mt-4">
-              <Button
-                size="sm"
-                variant="primary"
-                icon={<Play size={12} />}
-                onClick={(e) => { e.stopPropagation(); applyTemplate(template) }}
-              >
-                Use Template
-              </Button>
+                <div className="flex gap-2 mt-4">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={<Play size={12} />}
+                    onClick={(e) => { e.stopPropagation(); applyTemplate(preset) }}
+                  >
+                    Use Template
+                  </Button>
+                </div>
+              </Card>
             </div>
-            </Card>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
+      {filtered.length === 0 && (
+        <div className="text-center py-16">
+          <Filter size={32} className="mx-auto text-faint mb-3" />
+          <p className="text-[14px] text-muted">No templates match your search</p>
+        </div>
+      )}
+
+      {/* Detail Modal */}
       {selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelected(null)} />
-          <Card className="relative max-w-lg w-full p-6 anim-float-up">
+          <Card className="relative max-w-lg w-full p-6 anim-float-up max-h-[85vh] overflow-y-auto">
             <div className="flex items-start gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-elevated flex items-center justify-center text-3xl shrink-0">
-                {selected.preview}
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shrink-0"
+                style={{ backgroundColor: `${CATEGORY_COLORS[selected.category]}20` }}
+              >
+                {selected.icon}
               </div>
               <div>
                 <h2 className="text-lg font-bold">{selected.name}</h2>
                 <div className="flex items-center gap-2 mt-1">
                   <Badge tone="accent">{selected.category}</Badge>
-                  <Badge tone="neutral">{selected.difficulty}</Badge>
-                  <Badge tone="neutral"><Clock size={10} className="inline mr-1" />{selected.duration}</Badge>
+                  <Badge tone="neutral">{getDifficultyLabel(selected)}</Badge>
+                  <Badge tone="neutral">
+                    <Clock size={10} className="inline mr-1" />
+                    {selected.timing.minClipLength}-{selected.timing.maxClipLength}s
+                  </Badge>
                 </div>
               </div>
             </div>
 
             <p className="text-[13px] text-muted mt-4">{selected.description}</p>
 
+            {/* Timing Rules */}
+            <div className="mt-4">
+              <h4 className="text-[12px] font-semibold text-faint uppercase tracking-wide mb-2">Timing Rules</h4>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Cut Interval</span>
+                  <span className="float-right text-fg font-medium">{selected.timing.cutInterval[0]}-{selected.timing.cutInterval[1]}s</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Hook Duration</span>
+                  <span className="float-right text-fg font-medium">{selected.timing.hookDuration}s</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Caption Words</span>
+                  <span className="float-right text-fg font-medium">{selected.timing.captionWordCount[0]}-{selected.timing.captionWordCount[1]}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Fade Duration</span>
+                  <span className="float-right text-fg font-medium">{selected.timing.fadeDuration}s</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Motion */}
+            <div className="mt-4">
+              <h4 className="text-[12px] font-semibold text-faint uppercase tracking-wide mb-2">Motion</h4>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Zoom Punch</span>
+                  <span className="float-right text-fg font-medium">{Math.round((selected.motion.zoomPunchIn - 1) * 100)}%</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Screen Shake</span>
+                  <span className="float-right text-fg font-medium">{selected.motion.shakeOnBeat ? `${Math.round(selected.motion.shakeIntensity * 100)}%` : 'Off'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Captions */}
+            <div className="mt-4">
+              <h4 className="text-[12px] font-semibold text-faint uppercase tracking-wide mb-2">Captions</h4>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Style</span>
+                  <span className="float-right text-fg font-medium">{selected.captions.style}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Font Size</span>
+                  <span className="float-right text-fg font-medium">{Math.round(selected.captions.fontSize * 100)}%</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Emphasis</span>
+                  <span className="float-right text-fg font-medium">{selected.captions.emphasisRule}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Highlight</span>
+                  <span className="float-right">
+                    <span className="inline-block w-3 h-3 rounded-full border border-white/20" style={{ backgroundColor: selected.captions.highlightColor }} />
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Audio */}
+            <div className="mt-4">
+              <h4 className="text-[12px] font-semibold text-faint uppercase tracking-wide mb-2">Audio</h4>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Voice Ducking</span>
+                  <span className="float-right text-fg font-medium">{selected.audio.duckingDb}dB</span>
+                </div>
+                <div className="p-2 rounded-lg bg-elevated border border-white/5">
+                  <span className="text-faint">Normalize</span>
+                  <span className="float-right text-fg font-medium">{selected.audio.normalizeTarget} LUFS</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Platforms */}
             <div className="mt-4">
               <h4 className="text-[12px] font-semibold text-faint uppercase tracking-wide mb-2">Platforms</h4>
               <div className="flex gap-2">
                 {selected.platforms.map(p => (
-                  <Badge key={p} tone="neutral">{p}</Badge>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <h4 className="text-[12px] font-semibold text-faint uppercase tracking-wide mb-2">Features</h4>
-              <div className="flex flex-wrap gap-2">
-                {selected.features.map(f => (
-                  <span key={f} className="px-2.5 py-1 rounded-lg bg-elevated text-[12px] text-fg border border-white/8">{f}</span>
+                  <Badge key={p} tone="neutral">{PLATFORM_BADGES[p] || p}</Badge>
                 ))}
               </div>
             </div>
