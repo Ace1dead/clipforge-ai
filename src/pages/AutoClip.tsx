@@ -13,6 +13,7 @@ import { fmtTime, downloadBlob, fmtBytes } from '../lib/format'
 import { analyzeVideo, extractClips, type VideoAnalysis, type ClipResult } from '../lib/aiEngine'
 import { drawCaptions, getStyle, CAPTION_STYLES, type TimedWord } from '../lib/captions'
 import { transcribeAudio, type WordTimestamp, isSTTSupported } from '../lib/stt'
+import { detectPausePoints, suggestBRoll, type BRollSuggestion } from '../lib/brollEngine'
 import { createDrawFrame } from '../lib/compositor'
 import type { EditStyleId, ColorSkinId } from '../lib/editStyles'
 import { detectSilences, type Silence } from '../lib/editor/silence'
@@ -67,6 +68,7 @@ export function AutoClip() {
   const [silences, setSilences] = useState<Silence[]>([])
   const [jumpCut, setJumpCut] = useState(false)
   const [energyProfile, setEnergyProfile] = useState<number[]>([])
+  const [brollSuggestions, setBrollSuggestions] = useState<BRollSuggestion[]>([])
 
   const abortRef = useRef<AbortController | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -220,6 +222,13 @@ export function AutoClip() {
       })
       setClips(extractedClips)
       if (extractedClips.length > 0) setSelectedClipId(extractedClips[0].id)
+      // Compute B-Roll suggestions from word timestamps
+      if (wordTimestamps.length > 0 && duration > 0) {
+        const pauses = detectPausePoints(wordTimestamps.map(w => ({ text: w.word, start: w.start, end: w.end })), duration)
+        const fullText = wordTimestamps.map(w => w.word).join(' ')
+        const suggestions = suggestBRoll(pauses, fullText)
+        setBrollSuggestions(suggestions)
+      }
       setStep('results')
       toast('success', `Found ${extractedClips.length} premium clips`)
     } catch (e) {
@@ -773,13 +782,27 @@ export function AutoClip() {
               </Card>
             )}
 
-            {/* YouTube B-Roll Suggestions */}
-            {selectedClip && selectedClip.hashtags.length > 0 && (
-              <Card className="p-5">
-                <h3 className="font-semibold text-[14px] mb-3 flex items-center gap-2">
-                  <Film size={14} className="text-accent" />
-                  B-Roll Ideas
-                </h3>
+            {/* B-Roll Suggestions — powered by brollEngine */}
+            <Card className="p-5">
+              <h3 className="font-semibold text-[14px] mb-3 flex items-center gap-2">
+                <Film size={14} className="text-accent" />
+                B-Roll Suggestions
+              </h3>
+              {brollSuggestions.length > 0 ? (
+                <div className="space-y-2">
+                  {brollSuggestions.slice(0, 5).map((s, i) => (
+                    <div key={i} className="bg-elevated/60 rounded-lg p-2.5 text-[12px]">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium">"{s.query}"</p>
+                        <Badge className="text-[9px]">{s.category}</Badge>
+                      </div>
+                      <p className="text-[11px] text-faint mt-1">
+                        Insert at {fmtTime(s.startTime)} — {s.duration.toFixed(1)}s · {Math.round(s.confidence * 100)}% confidence
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : selectedClip && selectedClip.hashtags.length > 0 ? (
                 <div className="space-y-2">
                   {selectedClip.hashtags.slice(0, 3).map((tag, i) => (
                     <div key={i} className="bg-elevated/60 rounded-lg p-2.5 text-[12px]">
@@ -787,15 +810,11 @@ export function AutoClip() {
                       <p className="text-[11px] text-faint mt-1">Use as transition overlay or background</p>
                     </div>
                   ))}
-                  {selectedClip.hooks.length > 0 && (
-                    <div className="bg-elevated/60 rounded-lg p-2.5 text-[12px]">
-                      <p className="font-medium">Search: "{selectedClip.hooks[0]} green screen overlay"</p>
-                      <p className="text-[11px] text-faint mt-1">Text overlay transition element</p>
-                    </div>
-                  )}
                 </div>
-              </Card>
-            )}
+              ) : (
+                <p className="text-[12px] text-faint">No pause points detected for B-Roll insertion.</p>
+              )}
+            </Card>
           </div>
         </div>
       )}
