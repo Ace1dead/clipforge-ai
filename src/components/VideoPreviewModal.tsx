@@ -5,14 +5,23 @@
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX } from 'lucide-react'
-import { Button, Select, Field, Slider, Badge, ProgressBar, toast } from './ui'
+import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX, Share2, ExternalLink, Copy, Check } from 'lucide-react'
+import { Button, Select, Field, Slider, Badge, ProgressBar, Textarea, toast } from './ui'
 import { createDrawFrame, renderPreviewFrame, type CompositorConfig } from '../lib/compositor'
 import { EDIT_STYLES, type EditStyleId, type ColorSkinId } from '../lib/editStyles'
 import { COLOR_SKINS } from '../lib/effects'
 import { CAPTION_STYLES } from '../lib/captions'
 import { fmtTime } from '../lib/format'
+import { generateShareLink, generateHashtags, validateCaption, type PlatformConfig, getPlatformConfig } from '../lib/socialScheduler'
 import type { TimedWord } from '../lib/tts'
+
+const PLATFORMS = [
+  { id: 'tiktok', name: 'TikTok', icon: '♪', color: '#ff0050' },
+  { id: 'instagram', name: 'Instagram Reels', icon: '◎', color: '#e1306c' },
+  { id: 'youtube', name: 'YouTube Shorts', icon: '▶', color: '#ff0000' },
+  { id: 'linkedin', name: 'LinkedIn', icon: 'in', color: '#0a66c2' },
+  { id: 'x', name: 'X (Twitter)', icon: '𝕏', color: '#ffffff' },
+] as const
 
 interface Props {
   open: boolean
@@ -30,6 +39,8 @@ interface Props {
   onExport: (config: CompositorConfig) => void
   exporting?: boolean
   exportProgress?: number
+  exportedBlob?: Blob | null
+  clipName?: string
 }
 
 export function VideoPreviewModal({
@@ -48,6 +59,8 @@ export function VideoPreviewModal({
   onExport,
   exporting = false,
   exportProgress = 0,
+  exportedBlob = null,
+  clipName = 'clip',
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -60,9 +73,27 @@ export function VideoPreviewModal({
   const [editStyle, setEditStyle] = useState<EditStyleId>(initialEditStyle)
   const [colorSkin, setColorSkin] = useState<ColorSkinId>(initialColorSkin)
 
+  // Share panel state
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('tiktok')
+  const [shareCaption, setShareCaption] = useState('')
+  const [shareHashtags, setShareHashtags] = useState<string[]>([])
+  const [copied, setCopied] = useState(false)
+
   const duration = (trimEnd ?? clipDuration) - trimStart
   const outW = platform === 'tiktok' || platform === 'reels' || platform === 'shorts' ? 1080 : 1920
   const outH = platform === 'tiktok' || platform === 'reels' || platform === 'shorts' ? 1920 : 1080
+
+  // Auto-generate hashtags when export completes
+  useEffect(() => {
+    if (exportedBlob) {
+      const tags = generateHashtags(clipName)
+      setShareHashtags(tags)
+      setShareCaption(`Check out this clip! ${tags.slice(0, 3).map(t => `#${t}`).join(' ')}`)
+    }
+  }, [exportedBlob, clipName])
+
+  const sharePlatformConfig = getPlatformConfig(selectedPlatform)
+  const captionValidation = shareCaption ? validateCaption(shareCaption, selectedPlatform) : { valid: true }
 
   // Memoize config so it only changes when settings change, not every render
   const compositorConfig: CompositorConfig = useMemo(() => ({
@@ -264,6 +295,87 @@ export function VideoPreviewModal({
               {exporting ? `Exporting ${Math.round(exportProgress * 100)}%...` : 'Export Video'}
             </Button>
             {exporting && <ProgressBar value={exportProgress} className="mt-2" />}
+
+            {/* Share Panel — appears after export */}
+            {exportedBlob && !exporting && (
+              <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                <div className="flex items-center gap-2">
+                  <Share2 size={14} className="text-accent" />
+                  <h4 className="text-[13px] font-semibold">Share to Platform</h4>
+                </div>
+
+                {/* Platform selector */}
+                <div className="grid grid-cols-5 gap-1">
+                  {PLATFORMS.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPlatform(p.id)}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-lg text-[10px] cursor-pointer transition-all ${
+                        selectedPlatform === p.id
+                          ? 'bg-accent/20 text-accent ring-1 ring-accent/50'
+                          : 'bg-white/5 text-faint hover:bg-white/10'
+                      }`}
+                    >
+                      <span className="text-[14px]" style={{ color: selectedPlatform === p.id ? p.color : undefined }}>{p.icon}</span>
+                      <span>{p.name.split(' ')[0]}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Caption input */}
+                <Field label={`Caption (${shareCaption.length}/${sharePlatformConfig?.maxCaptionLength ?? 2200})`}>
+                  <Textarea
+                    value={shareCaption}
+                    onChange={(e) => setShareCaption(e.target.value)}
+                    rows={3}
+                    className="text-[12px]"
+                  />
+                  {!captionValidation.valid && (
+                    <p className="text-[10px] text-red-400 mt-1">{captionValidation.error}</p>
+                  )}
+                </Field>
+
+                {/* Hashtags */}
+                <div className="flex flex-wrap gap-1">
+                  {shareHashtags.map((tag) => (
+                    <Badge key={tag} className="text-[10px]">#{tag}</Badge>
+                  ))}
+                </div>
+
+                {/* Share buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    size="sm"
+                    icon={<ExternalLink size={13} />}
+                    disabled={!captionValidation.valid}
+                    onClick={() => {
+                      const link = generateShareLink(selectedPlatform, '', shareCaption)
+                      window.open(link, '_blank')
+                      toast('info', `Opening ${PLATFORMS.find(p => p.id === selectedPlatform)?.name}...`)
+                    }}
+                  >
+                    Open Upload
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={copied ? <Check size={13} /> : <Copy size={13} />}
+                    onClick={() => {
+                      navigator.clipboard.writeText(shareCaption)
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 2000)
+                    }}
+                  >
+                    {copied ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+
+                <p className="text-[10px] text-faint text-center">
+                  Video downloaded. Upload it on the platform.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

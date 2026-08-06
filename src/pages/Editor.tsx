@@ -48,6 +48,7 @@ export function Editor() {
   const [generatingVoice, setGeneratingVoice] = useState(false)
   const [progress, setProgress] = useState(0)
   const [res, setRes] = useState<Res>('9:16')
+  const [exportedBlob, setExportedBlob] = useState<Blob | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef(0)
@@ -212,8 +213,8 @@ export function Editor() {
     setTime(v.currentTime)
   }
 
-  const exportVideo = async () => {
-    if (!project?.videoUrl) { toast('error', 'Add a video first'); return }
+  const exportVideo = async (): Promise<Blob | null> => {
+    if (!project?.videoUrl) { toast('error', 'Add a video first'); return null }
     setExporting(true)
     setProgress(0)
     try {
@@ -237,9 +238,12 @@ export function Editor() {
         onProgress: setProgress,
       })
       downloadBlob(blob, `${(project.name || 'clip').replace(/\s+/g, '-')}_final.webm`)
+      setExportedBlob(blob)
       toast('success', 'Export complete', fmtBytes(blob.size))
+      return blob
     } catch (e) {
       toast('error', 'Export failed', e instanceof Error ? e.message : undefined)
+      return null
     } finally { setExporting(false) }
   }
 
@@ -478,13 +482,14 @@ export function Editor() {
         initialCaptionStyle={project?.captionStyle ?? 'pop-classic'}
         initialEditStyle={previewEditStyle}
         initialColorSkin={previewColorSkin}
-        onClose={() => setPreviewOpen(false)}
+        onClose={() => { setPreviewOpen(false); setExportedBlob(null) }}
         onExport={async (config) => {
           await exportVideo()
-          setPreviewOpen(false)
         }}
         exporting={exporting}
         exportProgress={progress}
+        exportedBlob={exportedBlob}
+        clipName={project?.name || 'clip'}
       />
     </div>
   )
