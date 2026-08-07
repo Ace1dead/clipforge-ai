@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:server": "tsx server/index.ts",
     "dev:all": "concurrently \"npm run dev:server\" \"npm run dev\"",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "postinstall": "node -e \"const f=require('fs');const p=require('path');const h=require('https');if(!f.existsSync('yt-dlp')){console.log('Downloading yt-dlp...');const u='https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';h.get(u,r=>{if(r.statusCode>=300&&r.statusCode<400){h.get(r.headers.location,r2=>{const s=f.createWriteStream('yt-dlp');r2.pipe(s);s.on('finish',()=>{f.chmodSync('yt-dlp',0o755);console.log('yt-dlp downloaded')})})}else{const s=f.createWriteStream('yt-dlp');r.pipe(s);s.on('finish',()=>{f.chmodSync('yt-dlp',0o755);console.log('yt-dlp downloaded')})}}).on('error',e=>console.log('yt-dlp download failed:',e.message))}else{console.log('yt-dlp already exists')}\"",
     "start": "node dist-server/index.js",

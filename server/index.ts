@@ -95,6 +95,14 @@ app.use('/api/tools', toolRoutes);
   app.use('/api/scene', rateLimitMiddleware(30, 60000)); // 30 scene analyses per minute
   app.use('/api/scene', sceneRoutes);
 
+// Audit routes (optional — depends on openai/playwright/zod)
+try {
+  const { default: auditRoutes } = await import('./routes/audit.js');
+  app.use('/api/audit', auditRoutes);
+} catch {
+  console.warn('[server] Audit routes disabled (missing dependencies: openai, playwright, zod)');
+}
+
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', version: '2.0.0', features: ['auth', 'projects', 'credits', 'admin'] });
