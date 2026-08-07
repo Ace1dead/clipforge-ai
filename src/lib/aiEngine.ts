@@ -155,18 +155,16 @@ Provide full JSON analysis with segments, hooks, moments, and suggestions.`;
     });
 
     return parseAnalysisResponse(response.content, duration, input.audioEnergyProfile);
-  } catch {
-    // AI failed — fall through to heuristic analysis
+  } catch (e) {
+    throw new Error(`AI video analysis failed: ${e instanceof Error ? e.message : 'Unknown error'}. Configure an API key in AI Settings.`);
   }
-
-  return generateHeuristicAnalysis(duration, input.audioEnergyProfile);
 }
 
 function parseAnalysisResponse(content: string, duration: number, energyProfile?: number[]): VideoAnalysis {
   try {
     // Try to extract JSON from response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return generateHeuristicAnalysis(duration, energyProfile);
+    if (!jsonMatch) throw new Error('AI response was not valid JSON. Retry the analysis.');
 
     const data = JSON.parse(jsonMatch[0]);
 
@@ -212,75 +210,9 @@ function parseAnalysisResponse(content: string, duration: number, energyProfile?
       },
       suggestions: data.suggestions ?? [],
     };
-  } catch {
-    return generateHeuristicAnalysis(duration, energyProfile);
+  } catch (e) {
+    throw new Error(`Failed to parse AI analysis: ${e instanceof Error ? e.message : 'Invalid response format'}. Retry the analysis.`);
   }
-}
-
-/**
- * Generate analysis using heuristics when AI is unavailable.
- */
-function generateHeuristicAnalysis(duration: number, energyProfile?: number[]): VideoAnalysis {
-  const segments: VideoSegment[] = [];
-  const segCount = Math.max(2, Math.min(6, Math.floor(duration / 30)));
-
-  for (let i = 0; i < segCount; i++) {
-    const start = (duration / segCount) * i;
-    const end = Math.min(start + 30, duration);
-    const energy = energyProfile ? averageSlice(energyProfile, start, end, duration) : Math.random();
-    segments.push({
-      id: `seg-${i}`,
-      start,
-      end,
-      duration: end - start,
-      score: Math.round(energy * 100),
-      type: i === 0 ? 'hook' : i === segCount - 1 ? 'punchline' : 'emotional',
-      description: `Segment ${i + 1}: ${Math.round(energy * 100)}% energy`,
-      transcript: '',
-      platform: { tiktok: Math.round(energy * 80 + 20), reels: Math.round(energy * 70 + 30), shorts: Math.round(energy * 60 + 40) },
-      suggestedCaptions: [],
-    });
-  }
-
-  const sortedSegments = [...segments].sort((a, b) => b.score - a.score);
-
-  return {
-    duration,
-    totalScore: Math.round(segments.reduce((s, seg) => s + seg.score, 0) / segments.length),
-    viralPotential: 'medium',
-    segments: sortedSegments,
-    hooks: [
-      { text: 'Wait for it...', type: 'curiosity', score: 65, platform: 'TikTok', estimatedReach: '10K-50K' },
-      { text: 'This changes everything', type: 'shock', score: 60, platform: 'Reels', estimatedReach: '50K-100K' },
-      { text: 'You won\'t believe what happens next', type: 'curiosity', score: 55, platform: 'Shorts', estimatedReach: '10K-50K' },
-      { text: 'Nobody talks about this', type: 'statement', score: 50, platform: 'TikTok', estimatedReach: '50K-100K' },
-      { text: 'Watch until the end', type: 'challenge', score: 45, platform: 'Reels', estimatedReach: '10K-50K' },
-    ],
-    moments: sortedSegments.slice(0, 3).map(seg => ({
-      timestamp: seg.start + seg.duration / 2,
-      type: 'high_energy' as const,
-      intensity: seg.score / 100,
-      description: seg.description,
-      suggestedClipStart: seg.start,
-      suggestedClipEnd: seg.end,
-    })),
-    metadata: {
-      hasSpeech: true,
-      language: 'en',
-      speakerCount: 1,
-      audioEnergy: 0.5,
-      visualComplexity: 0.5,
-      pacingScore: 0.5,
-      emotionalRange: 0.5,
-    },
-    suggestions: [
-      'Add captions for silent viewers',
-      'Use a strong hook in the first 2 seconds',
-      'Keep clips under 30 seconds for maximum engagement',
-      'Add trending audio or music for discoverability',
-      'End with a call-to-action or loop',
-    ],
-  };
 }
 
 // ============================================================
@@ -359,8 +291,9 @@ No markdown. Valid JSON only.`,
           if (e.hashtags?.length) baseClips[i].hashtags = e.hashtags;
         }
       }
-    } catch {
-      // AI enhancement unavailable — use base clips as-is
+    } catch (e) {
+      // AI enhancement failed — use base clips with a warning
+      console.warn('AI clip enhancement failed, using base analysis:', e);
     }
 
     return baseClips;
@@ -401,8 +334,8 @@ Generate optimized clips with titles, hooks, hashtags, and platform scores.`;
     });
 
     return parseClipsResponse(response.content, duration, targetPlatforms);
-  } catch {
-    return generateFallbackClips(duration, input.analysis, targetPlatforms, clipCount);
+  } catch (e) {
+    throw new Error(`AI clip extraction failed: ${e instanceof Error ? e.message : 'Unknown error'}. Configure an API key in AI Settings.`);
   }
 }
 
@@ -435,43 +368,6 @@ function parseClipsResponse(content: string, duration: number, platforms: string
   } catch {
     return [];
   }
-}
-
-function generateFallbackClips(
-  duration: number,
-  analysis: VideoAnalysis | undefined,
-  platforms: string[],
-  count: number
-): ClipResult[] {
-  const clips: ClipResult[] = [];
-  const segments = analysis?.segments ?? [];
-  const topSegments = segments.slice(0, count);
-
-  for (let i = 0; i < Math.max(count, topSegments.length); i++) {
-    const seg = topSegments[i];
-    const start = seg?.start ?? (duration / count) * i;
-    const end = seg?.end ?? Math.min(start + 30, duration);
-    const platform = platforms[i % platforms.length] as 'tiktok' | 'reels' | 'shorts';
-
-    clips.push({
-      id: `clip-${i}`,
-      title: seg?.description ?? `Clip ${i + 1}: ${formatTime(start)}`,
-      description: `Auto-extracted clip from ${formatTime(start)} to ${formatTime(end)}`,
-      start,
-      end,
-      duration: end - start,
-      viralScore: seg?.score ?? Math.round(40 + Math.random() * 30),
-      platform,
-      hooks: analysis?.hooks?.slice(0, 2).map(h => h.text) ?? ['Watch this!'],
-      hashtags: ['#viral', '#trending', '#fyp'],
-      thumbnailTimestamp: start + (end - start) * 0.3,
-      captionStyle: 'pop-classic',
-      transitions: [],
-      musicMood: 'energetic',
-    });
-  }
-
-  return clips;
 }
 
 // ============================================================
@@ -531,11 +427,9 @@ Create a complete viral content package.`;
     });
 
     return parseContentPackage(response.content, platform, duration);
-  } catch {
-    // AI failed — fall through to fallback
+  } catch (e) {
+    throw new Error(`AI content generation failed: ${e instanceof Error ? e.message : 'Unknown error'}. Configure an API key in AI Settings.`);
   }
-
-  return generateFallbackPackage(clipTitle, platform, duration);
 }
 
 function parseContentPackage(content: string, platform: string, duration: number): ContentPackage {
@@ -569,49 +463,9 @@ function parseContentPackage(content: string, platform: string, duration: number
       allClips: [],
       thumbnailSuggestions: [1, 3, Math.floor(duration / 2)],
     };
-  } catch {
-    return generateFallbackPackage(undefined, platform, duration);
+  } catch (e) {
+    throw new Error(`Failed to parse AI content package: ${e instanceof Error ? e.message : 'Invalid response format'}. Retry the generation.`);
   }
-}
-
-function generateFallbackPackage(title: string | undefined, platform: string, duration: number): ContentPackage {
-  const hooks = [
-    `${title || 'This'} will change your perspective! 🤯`,
-    `Wait for it... ${title ? `"${title}"` : 'the ending is insane'}`,
-    `Nobody is talking about this 👀`,
-  ];
-
-  const hashtags = platform === 'tiktok'
-    ? ['#fyp', '#foryou', '#viral', '#trending', '#mindset', '#life']
-    : platform === 'reels'
-    ? ['#reels', '#viral', '#explore', '#trending', '#instagood']
-    : ['#shorts', '#youtube', '#viral', '#trending', '#subscribe'];
-
-  return {
-    title: title || 'You need to see this 🤯',
-    description: `Wait for the ending! Like & follow for more. ${hashtags.slice(0, 3).join(' ')}`,
-    hooks,
-    hashtags,
-    captions: hooks.map(h => h),
-    bestClip: {
-      id: 'best-clip',
-      title: title || 'Viral Clip',
-      description: '',
-      start: 0,
-      end: Math.min(duration, 60),
-      duration: Math.min(duration, 60),
-      viralScore: 65,
-      platform: platform as any,
-      hooks,
-      hashtags,
-      thumbnailTimestamp: 2,
-      captionStyle: 'pop-classic',
-      transitions: [],
-      musicMood: 'energetic',
-    },
-    allClips: [],
-    thumbnailSuggestions: [1, 3, Math.floor(duration / 2)],
-  };
 }
 
 // ============================================================
@@ -667,22 +521,26 @@ Provide detailed scoring and improvements.`;
     });
 
     const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-  } catch {
-    // AI failed — fall through to default
+    if (jsonMatch) {
+      const data = JSON.parse(jsonMatch[0]);
+      return {
+        score: typeof data.score === 'number' ? Math.max(0, Math.min(100, data.score)) : 50,
+        grade: ['A+', 'A', 'B+', 'B', 'C', 'D'].includes(data.grade) ? data.grade : 'C',
+        breakdown: {
+          title: typeof data.breakdown?.title === 'number' ? data.breakdown.title : 50,
+          description: typeof data.breakdown?.description === 'number' ? data.breakdown.description : 50,
+          hashtags: typeof data.breakdown?.hashtags === 'number' ? data.breakdown.hashtags : 50,
+          timing: typeof data.breakdown?.timing === 'number' ? data.breakdown.timing : 50,
+          format: typeof data.breakdown?.format === 'number' ? data.breakdown.format : 50,
+        },
+        improvements: Array.isArray(data.improvements) ? data.improvements : [],
+        bestPostingTime: typeof data.bestPostingTime === 'string' ? data.bestPostingTime : '7-9 PM EST',
+      };
+    }
+    throw new Error('AI response was not valid JSON');
+  } catch (e) {
+    throw new Error(`AI viral scoring failed: ${e instanceof Error ? e.message : 'Unknown error'}. Configure an API key in AI Settings.`);
   }
-
-  return {
-    score: 55,
-    grade: 'B',
-    breakdown: { title: 50, description: 50, hashtags: 60, timing: 55, format: 55 },
-    improvements: [
-      'Add a stronger hook in the first 2 seconds',
-      'Use more specific hashtags for your niche',
-      'Add a clear call-to-action',
-    ],
-    bestPostingTime: '7-9 PM EST',
-  };
 }
 
 // ============================================================
@@ -697,14 +555,6 @@ function formatTime(seconds: number): string {
 
 function clampNumber(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
-}
-
-function averageSlice(arr: number[], start: number, end: number, totalDuration: number): number {
-  const startIdx = Math.floor((start / totalDuration) * arr.length);
-  const endIdx = Math.floor((end / totalDuration) * arr.length);
-  const slice = arr.slice(startIdx, endIdx);
-  if (slice.length === 0) return 0.5;
-  return slice.reduce((s, v) => s + v, 0) / slice.length;
 }
 
 // ============================================================
@@ -808,11 +658,10 @@ Respond with JSON:
 
     const parsed = parseStyleResponse(res.content)
     if (parsed) return parsed
-  } catch {
-    // Fall through to heuristic
+    throw new Error('AI response was not valid JSON')
+  } catch (e) {
+    throw new Error(`AI style selection failed: ${e instanceof Error ? e.message : 'Unknown error'}. Configure an API key in AI Settings.`);
   }
-
-  return heuristicStyleSelection(input)
 }
 
 function parseStyleResponse(text: string): StyleAnalysisResult | null {
@@ -829,40 +678,6 @@ function parseStyleResponse(text: string): StyleAnalysisResult | null {
       calculatedTempoBPM: data.calculatedTempoBPM || data.calculated_tempo_bpm || 120,
     }
   } catch { return null }
-}
-
-function heuristicStyleSelection(input: StyleAnalysisInput): StyleAnalysisResult {
-  const bpm = input.bpm || 120
-  const tempo = input.tempo || 'mid'
-  const avgEnergy = input.audioEnergyProfile
-    ? input.audioEnergyProfile.reduce((a,b)=>a+b,0) / input.audioEnergyProfile.length
-    : 0.5
-
-  let primaryStyle = 'Velocity'
-  let colorSkin = 'Classic'
-
-  if (avgEnergy > 0.6 || tempo === 'fast' || tempo === 'very_fast') {
-    primaryStyle = 'Raw/Impact'
-    colorSkin = 'Edgy'
-  } else if (bpm >= 100 && bpm <= 160) {
-    primaryStyle = 'Velocity'
-    colorSkin = 'Candy'
-  } else if (tempo === 'slow') {
-    primaryStyle = 'Flow/Match-Cut'
-    colorSkin = 'LoFi'
-  } else {
-    primaryStyle = 'Kinetic Typography'
-    colorSkin = 'Classic'
-  }
-
-  return {
-    primaryStyle,
-    colorSkin,
-    justification: `Heuristic selection based on BPM=${bpm}, tempo=${tempo}, energy=${avgEnergy.toFixed(2)}`,
-    detectedGenre: input.detectedGenre || 'Unknown',
-    dominantAudioMood: input.audioMood || 'Unknown',
-    calculatedTempoBPM: bpm,
-  }
 }
 
 /**
@@ -1140,11 +955,10 @@ Respond with JSON:
 
     const parsed = parseScriptResponse(res.content, duration)
     if (parsed) return parsed
-  } catch {
-    // Fall through to heuristic
+    throw new Error('AI response was not valid JSON')
+  } catch (e) {
+    throw new Error(`AI script generation failed: ${e instanceof Error ? e.message : 'Unknown error'}. Configure an API key in AI Settings.`);
   }
-
-  return heuristicScript(request)
 }
 
 function parseScriptResponse(text: string, duration: number): ScriptResult | null {
@@ -1174,68 +988,4 @@ function parseScriptResponse(text: string, duration: number): ScriptResult | nul
       hashtags: data.hashtags || [],
     }
   } catch { return null }
-}
-
-function heuristicScript(request: ScriptRequest): ScriptResult {
-  const { topic, platform = 'general', style = 'viral', duration = 30 } = request
-
-  const hooks: Record<string, string[]> = {
-    viral: [
-      `You won't believe what happens with ${topic}...`,
-      `This changed everything about ${topic}.`,
-      `Nobody talks about ${topic} but...`,
-    ],
-    educational: [
-      `Here's what nobody tells you about ${topic}.`,
-      `Let me explain ${topic} in 30 seconds.`,
-      `${topic} — the truth they don't want you to know.`,
-    ],
-    entertaining: [
-      `POV: You just discovered ${topic}.`,
-      `When ${topic} hits different...`,
-      `${topic} but make it chaotic.`,
-    ],
-    emotional: [
-      `This ${topic} moment broke me.`,
-      `If you've ever felt ${topic}... this is for you.`,
-      `The ${topic} story nobody expected.`,
-    ],
-    promotional: [
-      `Stop scrolling — ${topic} is here.`,
-      `The ${topic} game-changer you need.`,
-      `${topic} — join the movement.`,
-    ],
-  }
-
-  const lines: ScriptLine[] = []
-  const allHooks = hooks[style] || hooks.viral
-  const lineCount = Math.floor(duration / 5)
-
-  // Hook
-  lines.push({ text: allHooks[0], startSec: 0, endSec: 4, emphasis: 'shout', emotion: 'excitement' })
-
-  // Body
-  const bodyPhrases = [
-    `Here's the thing about ${topic}...`,
-    `Most people get this wrong.`,
-    `But when you understand it...`,
-    `Everything changes.`,
-    `And that's why ${topic} matters.`,
-  ]
-  for (let i = 0; i < Math.min(lineCount - 2, bodyPhrases.length); i++) {
-    const t = 4 + i * 4
-    lines.push({ text: bodyPhrases[i], startSec: t, endSec: t + 4, emphasis: 'normal', emotion: 'curiosity' })
-  }
-
-  // CTA
-  const ctaText = `Follow for more ${topic} content!`
-  lines.push({ text: ctaText, startSec: duration - 4, endSec: duration, emphasis: 'shout', emotion: 'excitement' })
-
-  return {
-    lines,
-    fullText: lines.map(l => l.text).join(' '),
-    hooks: allHooks,
-    cta: ctaText,
-    hashtags: [topic.replace(/\s+/g, ''), 'fyp', 'viral', 'trending'],
-  }
 }

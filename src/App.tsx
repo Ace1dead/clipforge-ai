@@ -37,6 +37,7 @@ const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m
 const SmartReframe = lazy(() => import('./pages/SmartReframe').then(m => ({ default: m.SmartReframe })))
 const TranscriptEditor = lazy(() => import('./pages/TranscriptEditor').then(m => ({ default: m.TranscriptEditor })))
 const HighlightScanner = lazy(() => import('./pages/HighlightScanner').then(m => ({ default: m.HighlightScanner })))
+const MovieSummarizer = lazy(() => import('./pages/MovieSummarizer').then(m => ({ default: m.MovieSummarizer })))
 const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
 
@@ -88,6 +89,7 @@ function App() {
         <Route path="/tools/smart-reframe" element={<ToolLayout active="smart-reframe"><ErrorBoundary><SmartReframe /></ErrorBoundary></ToolLayout>} />
         <Route path="/tools/transcript-editor" element={<ToolLayout active="transcript-editor"><ErrorBoundary><TranscriptEditor /></ErrorBoundary></ToolLayout>} />
         <Route path="/tools/highlight-scanner" element={<ToolLayout active="highlight-scanner"><ErrorBoundary><HighlightScanner /></ErrorBoundary></ToolLayout>} />
+        <Route path="/tools/movie-summarizer" element={<ToolLayout active="movie-summarizer"><ErrorBoundary><MovieSummarizer /></ErrorBoundary></ToolLayout>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
