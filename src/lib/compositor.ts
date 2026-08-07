@@ -22,6 +22,7 @@ import type {
   Timeline,
   Clip,
   Track,
+  ClipEffect,
   TextClipConfig,
   ChromaKeyConfig,
   MaskConfig,
@@ -33,6 +34,8 @@ import {
 } from './chromaKey'
 import { getAnimationState, applyAnimationToCanvas, type AnimationConfig } from './animations'
 import { getFilterById, applyFilter as applyFilterFn } from './filters'
+import { applyLUT3D } from './lutGenerator'
+import type { LUT3D } from './lutGenerator'
 
 // ── Compositor config ──────────────────────────────────────────────
 
@@ -54,6 +57,10 @@ export interface CompositorConfig {
   videoSources?: Map<string, HTMLVideoElement>
   textLayers?: KeyframedLayer[]
   audioDucking?: { enabled: boolean; sourceTrackId: string; targetTrackId: string }
+
+  // Global LUT (applied after all clip rendering)
+  lut?: LUT3D | null
+  lutStrength?: number
 }
 
 export interface DrawFrameInput {
@@ -302,6 +309,54 @@ function applyMaskEffect(
   }
 }
 
+// ── Per-clip effect resolver ────────────────────────────────────────
+
+/**
+ * Resolve a ClipEffect ID to an actual EffectFn.
+ * Maps effect IDs from the ClipEffect interface to the effects module functions.
+ */
+function resolveClipEffect(effect: ClipEffect): EffectFn | null {
+  if (!effect.enabled) return null
+
+  const p = effect.params
+  switch (effect.id) {
+    case 'screen-shake':
+      return screenShake(
+        (p.intensity as number) ?? 1,
+        (p.frequency as number) ?? 30,
+      )
+    case 'chromatic-aberration':
+      return chromaticAberration(
+        (p.offset as number) ?? 3,
+      )
+    case 'vignette':
+      return vignette(
+        (p.strength as number) ?? 0.4,
+        (p.radius as number) ?? 0.6,
+      )
+    case 'film-grain':
+      return filmGrain(
+        (p.intensity as number) ?? 0.08,
+      )
+    case 'exposure-pulse':
+      return exposurePulse(
+        (p.stops as number) ?? 1.5,
+        (p.decayFrames as number) ?? 4,
+      )
+    case 'scanlines':
+      return scanlines(
+        (p.density as number) ?? 0.5,
+        (p.opacity as number) ?? 0.15,
+      )
+    case 'glitch':
+      return glitchEffect(
+        (p.intensity as number) ?? 1,
+      )
+    default:
+      return null
+  }
+}
+
 function applyColorGradeEffect(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -456,6 +511,8 @@ export function createTimelineDrawFrame(config: CompositorConfig) {
     timeline,
     videoSources = new Map(),
     textLayers = [],
+    lut = null,
+    lutStrength = 1,
   } = config
 
   const style = EDIT_STYLES[editStyle]
@@ -517,6 +574,11 @@ export function createTimelineDrawFrame(config: CompositorConfig) {
       ctx.fillStyle = `rgba(0,0,0,${smoothstep((time - (clipDuration - fadeDuration)) / fadeDuration)})`
       ctx.fillRect(0, 0, w, h)
     }
+
+    // Global LUT (applied after everything else)
+    if (lut) {
+      applyLUT3D(ctx, w, h, lut, lutStrength)
+    }
   }
 
   function drawTimeline(ctx: CanvasRenderingContext2D, time: number, w: number, h: number): void {
@@ -569,6 +631,16 @@ export function createTimelineDrawFrame(config: CompositorConfig) {
           ctx.globalAlpha = clip.opacity
         }
 
+        // ── Speed ramp: seek video to correct source time ────────
+        if (video && video.readyState >= 2) {
+          const sourceTime = getSourceTimeFromSpeedRamp(clipDuration, clipProgress, clip.speedRamp)
+          const targetTime = clip.sourceStart + sourceTime
+          // Only seek if significantly different (avoid constant seeking)
+          if (Math.abs(video.currentTime - targetTime) > 0.03) {
+            video.currentTime = Math.max(0, Math.min(targetTime, video.duration || Infinity))
+          }
+        }
+
         // ── Draw video ───────────────────────────────────────────
         const transition = getTransitionsAtTime(clip, time)
 
@@ -607,6 +679,16 @@ export function createTimelineDrawFrame(config: CompositorConfig) {
           const filterPreset = getFilterById(clip.filter)
           if (filterPreset) {
             applyFilterFn(ctx, w, h, filterPreset, clip.filterStrength ?? 1)
+          }
+        }
+
+        // ── Per-clip effects ────────────────────────────────────
+        if (clip.effects.length > 0) {
+          const clipEffectFns = clip.effects.map(e => resolveClipEffect(e)).filter(Boolean) as EffectFn[]
+          if (clipEffectFns.length > 0) {
+            const composed = composeEffects(...clipEffectFns)
+            const ec = createEffectContext(ctx, time, w, h, beatIntensity, bpm)
+            composed(ec, () => {})
           }
         }
 

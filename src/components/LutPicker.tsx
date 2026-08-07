@@ -23,137 +23,31 @@ import {
   histogramMatchLUT,
   extractImageData,
 } from '../lib/colorTransfer'
+import { LUT_PRESETS } from '../lib/lutPresets'
 import { Upload, Download, Wand2, Image, Sliders, X, Loader2, Check } from 'lucide-react'
 
-// ── Built-in LUT Presets (generated procedurally) ──────────────────
+// ── Built-in LUT Presets (from shared module) ──────────────────────
 
-function generateBuiltinLUTs(): { id: string; name: string; category: string; lut: LUT3D; thumbnail: string }[] {
-  return [
-    {
-      id: 'identity', name: 'None', category: 'basic',
-      lut: generateIdentityLUT(17),
-      thumbnail: 'linear-gradient(135deg, #888 0%, #ccc 50%, #888 100%)',
-    },
-    {
-      id: 'teal-orange', name: 'Teal & Orange', category: 'cinematic',
-      lut: (() => {
-        const lut = generateIdentityLUT(17)
-        // Push shadows toward teal, highlights toward orange
-        for (let i = 0; i < lut.data.length; i += 3) {
-          const r = lut.data[i], g = lut.data[i + 1], b = lut.data[i + 2]
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b
-          if (lum < 0.5) {
-            // Shadows → teal
-            lut.data[i] = r * 0.85
-            lut.data[i + 1] = g * 1.05
-            lut.data[i + 2] = b * 1.15
-          } else {
-            // Highlights → orange
-            lut.data[i] = r * 1.1 + 0.05
-            lut.data[i + 1] = g * 0.95
-            lut.data[i + 2] = b * 0.85
-          }
-        }
-        return lut
-      })(),
-      thumbnail: 'linear-gradient(135deg, #0d9488 0%, #f97316 100%)',
-    },
-    {
-      id: 'vintage-warm', name: 'Vintage Warm', category: 'vintage',
-      lut: (() => {
-        const lut = generateIdentityLUT(17)
-        for (let i = 0; i < lut.data.length; i += 3) {
-          lut.data[i] = Math.min(1, lut.data[i] * 1.05 + 0.03)
-          lut.data[i + 1] = lut.data[i + 1] * 0.98 + 0.02
-          lut.data[i + 2] = lut.data[i + 2] * 0.88
-        }
-        return lut
-      })(),
-      thumbnail: 'linear-gradient(135deg, #f5e6d3 0%, #d4a574 100%)',
-    },
-    {
-      id: 'cool-blue', name: 'Cool Blue', category: 'cool',
-      lut: (() => {
-        const lut = generateIdentityLUT(17)
-        for (let i = 0; i < lut.data.length; i += 3) {
-          lut.data[i] = lut.data[i] * 0.9
-          lut.data[i + 1] = lut.data[i + 1] * 0.98
-          lut.data[i + 2] = Math.min(1, lut.data[i + 2] * 1.12 + 0.03)
-        }
-        return lut
-      })(),
-      thumbnail: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    },
-    {
-      id: 'noir', name: 'Noir B&W', category: 'bw',
-      lut: (() => {
-        const lut = generateIdentityLUT(17)
-        for (let i = 0; i < lut.data.length; i += 3) {
-          const r = lut.data[i], g = lut.data[i + 1], b = lut.data[i + 2]
-          const gray = 0.299 * r + 0.587 * g + 0.114 * b
-          // Increase contrast
-          const contrast = ((gray - 0.5) * 1.3) + 0.5
-          const val = Math.max(0, Math.min(1, contrast))
-          lut.data[i] = val
-          lut.data[i + 1] = val
-          lut.data[i + 2] = val
-        }
-        return lut
-      })(),
-      thumbnail: 'linear-gradient(135deg, #1a1a1a 0%, #ffffff 100%)',
-    },
-    {
-      id: 'cyberpunk', name: 'Cyberpunk', category: 'artistic',
-      lut: (() => {
-        const lut = generateIdentityLUT(17)
-        for (let i = 0; i < lut.data.length; i += 3) {
-          const r = lut.data[i], g = lut.data[i + 1], b = lut.data[i + 2]
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b
-          if (lum < 0.3) {
-            lut.data[i] = r * 0.7
-            lut.data[i + 1] = g * 0.6
-            lut.data[i + 2] = Math.min(1, b * 1.4)
-          } else {
-            lut.data[i] = Math.min(1, r * 1.2 + 0.05)
-            lut.data[i + 1] = g * 0.8
-            lut.data[i + 2] = Math.min(1, b * 1.3)
-          }
-        }
-        return lut
-      })(),
-      thumbnail: 'linear-gradient(135deg, #ff00ff 0%, #00ffff 100%)',
-    },
-    {
-      id: 'pastel', name: 'Pastel Dream', category: 'artistic',
-      lut: (() => {
-        const lut = generateIdentityLUT(17)
-        for (let i = 0; i < lut.data.length; i += 3) {
-          // Lift blacks, reduce contrast, add pink tint
-          lut.data[i] = lut.data[i] * 0.7 + 0.2 + 0.03
-          lut.data[i + 1] = lut.data[i + 1] * 0.7 + 0.18
-          lut.data[i + 2] = lut.data[i + 2] * 0.7 + 0.22
-        }
-        return lut
-      })(),
-      thumbnail: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 50%, #a18cd1 100%)',
-    },
-    {
-      id: 'high-contrast', name: 'High Contrast', category: 'dramatic',
-      lut: (() => {
-        const lut = generateIdentityLUT(17)
-        for (let i = 0; i < lut.data.length; i += 3) {
-          lut.data[i] = Math.max(0, Math.min(1, ((lut.data[i] - 0.5) * 1.5) + 0.5))
-          lut.data[i + 1] = Math.max(0, Math.min(1, ((lut.data[i + 1] - 0.5) * 1.5) + 0.5))
-          lut.data[i + 2] = Math.max(0, Math.min(1, ((lut.data[i + 2] - 0.5) * 1.5) + 0.5))
-        }
-        return lut
-      })(),
-      thumbnail: 'linear-gradient(135deg, #000 0%, #fff 100%)',
-    },
-  ]
+// Lazy-generate LUTs from presets (memoized in lutPresets.ts)
+const _presetLuts = new Map<string, LUT3D>()
+function getPresetLut(preset: typeof LUT_PRESETS[number]): LUT3D {
+  if (!_presetLuts.has(preset.id)) {
+    _presetLuts.set(preset.id, preset.generate())
+  }
+  return _presetLuts.get(preset.id)!
 }
 
-const BUILTIN_LUTS = generateBuiltinLUTs()
+function getBuiltinLUTs() {
+  return LUT_PRESETS.map(p => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    lut: getPresetLut(p),
+    thumbnail: p.thumbnail,
+  }))
+}
+
+const BUILTIN_LUTS = getBuiltinLUTs()
 
 // ── Thumbnail Canvas ───────────────────────────────────────────────
 
