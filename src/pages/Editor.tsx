@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import {
   Play, Pause, Upload, Captions, Mic, Palette, Clapperboard, Download, Save, SkipBack, SkipForward,
-  Volume2, Type, Sparkles, Wand2, Loader2, ArrowLeft, X,
+  Volume2, Type, Sparkles, Wand2, Loader2, ArrowLeft, X, Globe,
 } from 'lucide-react'
 import { Button, Card, Tabs, Textarea, Select, Field, Slider, ProgressBar, Badge, toast } from '../components/ui'
 import { MediaDropzone } from '../components/MediaDropzone'
@@ -20,6 +20,7 @@ import { fmtTime, downloadBlob, fmtBytes, uid } from '../lib/format'
 import { createDrawFrame } from '../lib/compositor'
 import type { CompositorConfig } from '../lib/compositor'
 import type { EditStyleId, ColorSkinId } from '../lib/editStyles'
+import { getSupportedLanguages, detectLanguage, generateDubScript, type DubScript } from '../lib/multiLanguageDubbing'
 
 const SAMPLE_SCRIPT = 'This is how you go viral. Post daily. Study the trends. Never stop testing. And always — always — keep the captions popping.'
 
@@ -49,6 +50,11 @@ export function Editor() {
   const [progress, setProgress] = useState(0)
   const [res, setRes] = useState<Res>('9:16')
   const [exportedBlob, setExportedBlob] = useState<Blob | null>(null)
+
+  // Dubbing state
+  const [dubTargetLang, setDubTargetLang] = useState('es')
+  const [dubScript, setDubScript] = useState<DubScript[]>([])
+  const [dubSourceLang, setDubSourceLang] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef(0)
@@ -262,6 +268,7 @@ export function Editor() {
           { id: 'captions', label: 'Captions', icon: <Captions size={13} /> },
           { id: 'voice', label: 'Voice', icon: <Mic size={13} /> },
           { id: 'style', label: 'Style', icon: <Palette size={13} /> },
+          { id: 'dub', label: 'Dub', icon: <Globe size={13} /> },
         ]}
         active={tab}
         onChange={setTab}
@@ -363,6 +370,53 @@ export function Editor() {
 
         {tab === 'style' && (
           <StylePicker value={project?.captionStyle ?? 'pop-classic'} onChange={(sid) => update({ captionStyle: sid })} />
+        )}
+
+        {tab === 'dub' && (
+          <div className="space-y-3">
+            <p className="text-[12px] text-faint">Translate your captions to 30+ languages.</p>
+            <Field label="Detected source language">
+              <div className="bg-elevated/60 rounded-lg px-3 py-2 text-[12px]">
+                {words.length > 0 ? detectLanguage(words.map(w => w.text).join(' ')) : '—'}
+              </div>
+            </Field>
+            <Field label="Target language">
+              <Select value={dubTargetLang} onChange={(e) => setDubTargetLang(e.target.value)}>
+                {getSupportedLanguages().map((l) => (
+                  <option key={l.code} value={l.code}>{l.name} ({l.nativeName})</option>
+                ))}
+              </Select>
+            </Field>
+            <Button
+              className="w-full"
+              icon={<Globe size={14} />}
+              disabled={words.length === 0}
+              onClick={() => {
+                const script = generateDubScript(words, dubTargetLang)
+                setDubScript(script)
+                const src = detectLanguage(words.map(w => w.text).join(' '))
+                setDubSourceLang(src)
+                toast('success', `Generated ${script.length} dubbing phrases → ${dubTargetLang}`)
+              }}
+            >
+              Generate Dub Script
+            </Button>
+            {dubScript.length > 0 && (
+              <div className="bg-elevated/60 border border-white/10 rounded-xl p-3 max-h-60 overflow-y-auto space-y-1.5">
+                <p className="text-[11px] text-faint mb-2">{dubSourceLang} → {dubTargetLang} · {dubScript.length} phrases</p>
+                {dubScript.map((phrase, i) => (
+                  <div key={i} className="text-[11px] border-b border-white/5 pb-1.5 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-faint tabular-nums">{fmtTime(phrase.start)}</span>
+                      <span className="font-medium">{phrase.original}</span>
+                    </div>
+                    <p className="text-accent/80 ml-10 mt-0.5">{phrase.translated || '(translate with API key)'}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-faint">Add your Google Translate API key in Settings for live translation.</p>
+          </div>
         )}
       </div>
     </>
