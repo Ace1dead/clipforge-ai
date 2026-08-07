@@ -69,6 +69,19 @@ export interface Clip {
 
   // For adjustment clips
   adjustmentConfig?: AdjustmentClipConfig
+
+  // Animations
+  animationIn?: {
+    type: string
+    duration: number
+    easing?: string
+  }
+  animationOut?: {
+    type: string
+    duration: number
+    easing?: string
+  }
+  textAnimation?: string
 }
 
 export interface Track {

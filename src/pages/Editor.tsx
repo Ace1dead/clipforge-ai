@@ -12,6 +12,7 @@ import { StylePicker } from '../components/StylePicker'
 import { VideoPreviewModal } from '../components/VideoPreviewModal'
 import TimelineComponent from '../components/Timeline'
 import KeyframeEditor from '../components/KeyframeEditor'
+import FilterPicker from '../components/FilterPicker'
 import { drawCaptions, getStyle } from '../lib/captions'
 import { estimateWordTiming, estimateSpeakingTime, STREAMELEMENTS_VOICES, synthesizeStreamElements } from '../lib/tts'
 import { renderComposition, videoMeta } from '../lib/video'
@@ -36,11 +37,36 @@ import {
 } from '../lib/timeline'
 import type { Timeline, Clip, Track, TrackType, ChromaKeyConfig, MaskConfig, ColorGradeConfig } from '../lib/timeline'
 import type { KeyframedLayer } from '../lib/keyframe'
+import {
+  ANIMATION_PRESETS,
+  ANIMATION_CATEGORIES,
+  getAnimationsByCategory,
+  createDefaultAnimation,
+  getAnimationState,
+  animationToCSS,
+  type AnimationType,
+  type AnimationConfig,
+} from '../lib/animations'
+import {
+  TEXT_ANIMATIONS,
+  TEXT_STYLE_PRESETS,
+  createDefaultTextLayer,
+  type TextAnimationPreset,
+} from '../lib/textLayers'
+import { getFilterById, applyFilter as applyFilterFn, type FilterPreset } from '../lib/filters'
 
 const SAMPLE_SCRIPT = 'This is how you go viral. Post daily. Study the trends. Never stop testing. And always — always — keep the captions popping.'
 
-type Res = '9:16' | '16:9' | '1:1'
-const OUT: Record<Res, { w: number; h: number }> = { '9:16': { w: 1080, h: 1920 }, '16:9': { w: 1920, h: 1080 }, '1:1': { w: 1080, h: 1080 } }
+type Res = '9:16' | '16:9' | '1:1' | '4k-9:16' | '4k-16:9' | '4k-1:1' | '1080p120'
+const OUT: Record<Res, { w: number; h: number; label: string }> = {
+  '9:16': { w: 1080, h: 1920, label: '1080p 9:16' },
+  '16:9': { w: 1920, h: 1080, label: '1080p 16:9' },
+  '1:1': { w: 1080, h: 1080, label: '1080p 1:1' },
+  '4k-9:16': { w: 2160, h: 3840, label: '4K 9:16' },
+  '4k-16:9': { w: 3840, h: 2160, label: '4K 16:9' },
+  '4k-1:1': { w: 2160, h: 2160, label: '4K 1:1' },
+  '1080p120': { w: 1920, h: 1080, label: '1080p 120fps' },
+}
 
 export function Editor() {
   const { id } = useParams()
@@ -71,6 +97,15 @@ export function Editor() {
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const [selectedKeyframeLayer, setSelectedKeyframeLayer] = useState<KeyframedLayer | null>(null)
   const [videoSources] = useState<Map<string, HTMLVideoElement>>(new Map())
+
+  // Filter state
+  const [activeFilterId, setActiveFilterId] = useState<string | null>(null)
+  const [filterStrength, setFilterStrength] = useState(1)
+
+  // Animation state
+  const [clipAnimationIn, setClipAnimationIn] = useState<AnimationConfig>({ type: 'none', duration: 0.5 })
+  const [clipAnimationOut, setClipAnimationOut] = useState<AnimationConfig>({ type: 'none', duration: 0.5 })
+  const [textAnimationType, setTextAnimationType] = useState<string>('pop')
 
   // Color grading state
   const [colorGrade, setColorGrade] = useState<ColorGradeConfig>({
@@ -213,6 +248,14 @@ export function Editor() {
             videoSources,
           })
           drawFrame({ ctx, time, w, h, video: video ?? undefined })
+
+          // Apply filter if active
+          if (activeFilterId) {
+            const filter = getFilterById(activeFilterId)
+            if (filter) {
+              applyFilterFn(ctx, w, h, filter, filterStrength)
+            }
+          }
         } else {
           // Fallback: single video + captions
           ctx.fillStyle = '#000'
@@ -420,14 +463,24 @@ export function Editor() {
               <MediaDropzone type="video" label="Upload your video" height="h-40" onPicked={(p) => void handleFile(p)} />
             )}
             <div className="pt-3 border-t border-white/8">
-              <Field label="Output ratio">
+              <Field label="Output & Quality">
                 <Select value={res} onChange={(e) => setRes(e.target.value as Res)}>
-                  <option value="9:16">9:16 Vertical (Shorts/TikTok)</option>
-                  <option value="16:9">16:9 Widescreen</option>
-                  <option value="1:1">1:1 Square</option>
+                  <optgroup label="1080p Standard">
+                    <option value="9:16">9:16 Vertical (TikTok/Shorts)</option>
+                    <option value="16:9">16:9 Widescreen (YouTube)</option>
+                    <option value="1:1">1:1 Square (Instagram)</option>
+                  </optgroup>
+                  <optgroup label="4K Ultra HD">
+                    <option value="4k-9:16">4K 9:16 Vertical</option>
+                    <option value="4k-16:9">4K 16:9 Widescreen</option>
+                    <option value="4k-1:1">4K 1:1 Square</option>
+                  </optgroup>
+                  <optgroup label="High Frame Rate">
+                    <option value="1080p120">1080p 120fps</option>
+                  </optgroup>
                 </Select>
               </Field>
-              <p className="text-[11px] text-faint mt-1.5">{outDims.w}×{outDims.h} · WebM export</p>
+              <p className="text-[11px] text-faint mt-1.5">{outDims.w}×{outDims.h} · {outDims.label} · WebM export</p>
             </div>
           </div>
         )}
@@ -494,7 +547,17 @@ export function Editor() {
 
         {/* ── Style Tab ──────────────────────────────────────────── */}
         {tab === 'style' && (
-          <StylePicker value={project?.captionStyle ?? 'pop-classic'} onChange={(sid) => update({ captionStyle: sid })} />
+          <div className="space-y-4">
+            <StylePicker value={project?.captionStyle ?? 'pop-classic'} onChange={(sid) => update({ captionStyle: sid })} />
+            <div className="border-t border-white/8 pt-3">
+              <FilterPicker
+                activeFilterId={activeFilterId}
+                filterStrength={filterStrength}
+                onFilterSelect={setActiveFilterId}
+                onStrengthChange={setFilterStrength}
+              />
+            </div>
+          </div>
         )}
 
         {/* ── Color Grading Tab ──────────────────────────────────── */}
@@ -682,6 +745,82 @@ export function Editor() {
               )}
             </div>
 
+            {/* Clip Animations */}
+            <div className="bg-gray-800/50 rounded-xl p-3">
+              <span className="text-[12px] font-semibold text-cyan-400 mb-2 block">Clip Animations</span>
+              <div className="space-y-2">
+                <Field label="Animate In">
+                  <Select value={clipAnimationIn.type} onChange={(e) => {
+                    const next = { ...clipAnimationIn, type: e.target.value as AnimationType }
+                    setClipAnimationIn(next)
+                    if (selectedClipId) updateSelectedClip({ animationIn: next })
+                  }}>
+                    {ANIMATION_PRESETS.map(a => (
+                      <option key={a.type} value={a.type}>{a.icon} {a.name}</option>
+                    ))}
+                  </Select>
+                </Field>
+                {clipAnimationIn.type !== 'none' && (
+                  <Field label={`In Duration: ${clipAnimationIn.duration.toFixed(1)}s`}>
+                    <input type="range" min="0.1" max="3" step="0.1" value={clipAnimationIn.duration}
+                      onChange={(e) => {
+                        const next = { ...clipAnimationIn, duration: parseFloat(e.target.value) }
+                        setClipAnimationIn(next)
+                        if (selectedClipId) updateSelectedClip({ animationIn: next })
+                      }}
+                      className="w-full"
+                    />
+                  </Field>
+                )}
+                <Field label="Animate Out">
+                  <Select value={clipAnimationOut.type} onChange={(e) => {
+                    const next = { ...clipAnimationOut, type: e.target.value as AnimationType }
+                    setClipAnimationOut(next)
+                    if (selectedClipId) updateSelectedClip({ animationOut: next })
+                  }}>
+                    {ANIMATION_PRESETS.map(a => (
+                      <option key={a.type} value={a.type}>{a.icon} {a.name}</option>
+                    ))}
+                  </Select>
+                </Field>
+                {clipAnimationOut.type !== 'none' && (
+                  <Field label={`Out Duration: ${clipAnimationOut.duration.toFixed(1)}s`}>
+                    <input type="range" min="0.1" max="3" step="0.1" value={clipAnimationOut.duration}
+                      onChange={(e) => {
+                        const next = { ...clipAnimationOut, duration: parseFloat(e.target.value) }
+                        setClipAnimationOut(next)
+                        if (selectedClipId) updateSelectedClip({ animationOut: next })
+                      }}
+                      className="w-full"
+                    />
+                  </Field>
+                )}
+              </div>
+            </div>
+
+            {/* Text Animations */}
+            <div className="bg-gray-800/50 rounded-xl p-3">
+              <span className="text-[12px] font-semibold text-yellow-400 mb-2 block">Text Animations</span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {TEXT_ANIMATIONS.map(anim => (
+                  <button
+                    key={anim.name}
+                    onClick={() => {
+                      setTextAnimationType(anim.name)
+                      if (selectedClipId) updateSelectedClip({ textAnimation: anim.name })
+                    }}
+                    className={`text-[10px] px-2 py-1.5 rounded-lg text-left ${
+                      textAnimationType === anim.name
+                        ? 'bg-yellow-600/30 ring-1 ring-yellow-500 text-yellow-300'
+                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-600/50'
+                    }`}
+                  >
+                    {anim.icon} {anim.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <p className="text-[11px] text-faint text-center">Select a clip on the timeline to apply effects</p>
           </div>
         )}
@@ -776,6 +915,7 @@ export function Editor() {
           <Button variant="ghost" size="sm" className={`text-[11px] ${res === '9:16' ? 'text-accent' : ''}`} onClick={() => setRes('9:16')}>TikTok</Button>
           <Button variant="ghost" size="sm" className={`text-[11px] ${res === '1:1' ? 'text-accent' : ''}`} onClick={() => setRes('1:1')}>Instagram</Button>
           <Button variant="ghost" size="sm" className={`text-[11px] ${res === '16:9' ? 'text-accent' : ''}`} onClick={() => setRes('16:9')}>YouTube</Button>
+          <Button variant="ghost" size="sm" className={`text-[11px] ${res.startsWith('4k') ? 'text-accent' : ''}`} onClick={() => setRes('4k-16:9')}>4K</Button>
         </div>
         <Button size="sm" icon={<Download size={14} />} disabled={!project?.videoUrl} onClick={() => setPreviewOpen(true)}>Preview & Export</Button>
       </div>
