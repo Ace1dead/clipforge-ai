@@ -82,6 +82,17 @@ export interface Clip {
     easing?: string
   }
   textAnimation?: string
+
+  // Per-clip filter (applied after color grading)
+  filter?: string     // FilterPreset id from filters.ts
+  filterStrength?: number  // 0-1
+
+  // Speed ramp (array of speed segments)
+  speedRamp?: Array<{
+    start: number   // relative time (0-1 of clip)
+    end: number
+    speed: number   // 0.25-4.0
+  }>
 }
 
 export interface Track {

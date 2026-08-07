@@ -31,6 +31,8 @@ import type {
 import {
   applyChromaKey,
 } from './chromaKey'
+import { getAnimationState, applyAnimationToCanvas, type AnimationConfig } from './animations'
+import { getFilterById, applyFilter as applyFilterFn } from './filters'
 
 // ── Compositor config ──────────────────────────────────────────────
 
@@ -206,6 +208,31 @@ export function createDrawFrame(config: CompositorConfig) {
 
 // ── Multi-track timeline compositor ────────────────────────────────
 
+/**
+ * Compute the effective playback time for a clip given a speed ramp.
+ * Returns the source-relative time in seconds.
+ */
+function getSourceTimeFromSpeedRamp(
+  clipDuration: number,
+  clipProgress: number, // 0-1
+  speedRamp?: Array<{ start: number; end: number; speed: number }>,
+): number {
+  if (!speedRamp || speedRamp.length === 0) {
+    // Uniform speed — clip.speed is already used to set timelineEnd
+    return clipProgress * clipDuration
+  }
+
+  // Walk through speed segments to accumulate source time
+  let sourceTime = 0
+  for (const seg of speedRamp) {
+    const segDuration = (seg.end - seg.start) * clipDuration
+    if (clipProgress <= seg.start) break
+    const effective = Math.min(clipProgress, seg.end) - seg.start
+    sourceTime += effective * segDuration * seg.speed
+  }
+  return sourceTime
+}
+
 function getClipAtTime(clips: Clip[], time: number): Clip | undefined {
   return clips.find(c => time >= c.timelineStart && time < c.timelineEnd)
 }
@@ -320,16 +347,29 @@ function drawTextClip(
   time: number,
   w: number,
   h: number,
+  textAnimation?: string,
 ): void {
   const textConfig = clip.textConfig
   if (!textConfig) return
 
+  const clipDuration = clip.timelineEnd - clip.timelineStart
   const timeRelative = time - clip.timelineStart
   const textValue = textConfig.text
   const fontSize = textConfig.fontSize || Math.round(w * 0.06)
   const fontFamily = textConfig.fontFamily || 'Inter, system-ui, sans-serif'
 
   ctx.save()
+
+  // ── Apply text animation ──────────────────────────────────────
+  if (textAnimation && textAnimation !== 'none') {
+    const animConfig: AnimationConfig = {
+      type: textAnimation as AnimationConfig['type'],
+      duration: Math.min(clipDuration, 1.0), // cap animation at 1s
+      easing: 'ease_out',
+    }
+    const animState = getAnimationState(animConfig, timeRelative, clipDuration, false)
+    applyAnimationToCanvas(ctx, animState, w, h)
+  }
 
   // Position based on align/valign
   const x = textConfig.align === 'left' ? w * 0.1 : textConfig.align === 'right' ? w * 0.9 : w * 0.5
@@ -494,8 +534,42 @@ export function createTimelineDrawFrame(config: CompositorConfig) {
         if (time < clip.timelineStart || time >= clip.timelineEnd) continue
 
         const video = videoSources.get(clip.sourceUrl || '')
+        const clipDuration = clip.timelineEnd - clip.timelineStart
+        const clipTime = time - clip.timelineStart
+        const clipProgress = clipTime / clipDuration
 
-        // Check for transitions
+        // ── Animation In/Out ─────────────────────────────────────
+        const hasAnimIn = clip.animationIn && clip.animationIn.type !== 'none'
+        const hasAnimOut = clip.animationOut && clip.animationOut.type !== 'none'
+
+        if (hasAnimIn || hasAnimOut) {
+          ctx.save()
+          if (hasAnimIn) {
+            const animState = getAnimationState(
+              { type: clip.animationIn!.type as AnimationConfig['type'], duration: clip.animationIn!.duration, easing: clip.animationIn!.easing as AnimationConfig['easing'] },
+              clipTime,
+              clipDuration,
+              false,
+            )
+            applyAnimationToCanvas(ctx, animState, w, h)
+          }
+          if (hasAnimOut) {
+            const animState = getAnimationState(
+              { type: clip.animationOut!.type as AnimationConfig['type'], duration: clip.animationOut!.duration, easing: clip.animationOut!.easing as AnimationConfig['easing'] },
+              clipTime,
+              clipDuration,
+              true,
+            )
+            applyAnimationToCanvas(ctx, animState, w, h)
+          }
+        }
+
+        // ── Clip opacity ─────────────────────────────────────────
+        if (clip.opacity < 1) {
+          ctx.globalAlpha = clip.opacity
+        }
+
+        // ── Draw video ───────────────────────────────────────────
         const transition = getTransitionsAtTime(clip, time)
 
         if (transition && video && video.readyState >= 2) {
@@ -517,25 +591,38 @@ export function createTimelineDrawFrame(config: CompositorConfig) {
           drawVideoFrame(ctx, video, w, h)
         }
 
-        // Apply chroma key
+        // ── Chroma key ───────────────────────────────────────────
         if (clip.chromaKey) {
           applyChromaKeyEffect(ctx, w, h, clip.chromaKey)
         }
 
-        // Apply mask
+        // ── Mask ─────────────────────────────────────────────────
         if (clip.mask) {
           applyMaskEffect(ctx, w, h, clip.mask)
           ctx.restore()
         }
 
-        // Draw text overlay for this clip
-        if (clip.textConfig && clip.type === 'text') {
-          drawTextClip(ctx, clip, time, w, h)
+        // ── Per-clip filter ──────────────────────────────────────
+        if (clip.filter) {
+          const filterPreset = getFilterById(clip.filter)
+          if (filterPreset) {
+            applyFilterFn(ctx, w, h, filterPreset, clip.filterStrength ?? 1)
+          }
         }
 
-        // Adjustment layer
+        // ── Text clip with animation ─────────────────────────────
+        if (clip.textConfig && clip.type === 'text') {
+          drawTextClip(ctx, clip, time, w, h, clip.textAnimation)
+        }
+
+        // ── Adjustment layer ─────────────────────────────────────
         if (clip.type === 'adjustment' && clip.adjustmentConfig) {
           drawAdjustmentLayer(ctx, w, h, clip.adjustmentConfig)
+        }
+
+        // ── Restore from animation/opacity saves ─────────────────
+        if (hasAnimIn || hasAnimOut || clip.opacity < 1) {
+          ctx.restore()
         }
       }
     }
