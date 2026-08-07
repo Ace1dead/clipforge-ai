@@ -13,6 +13,7 @@ import { VideoPreviewModal } from '../components/VideoPreviewModal'
 import TimelineComponent from '../components/Timeline'
 import KeyframeEditor from '../components/KeyframeEditor'
 import FilterPicker from '../components/FilterPicker'
+import LutPicker from '../components/LutPicker'
 import { drawCaptions, getStyle } from '../lib/captions'
 import { estimateWordTiming, estimateSpeakingTime, STREAMELEMENTS_VOICES, synthesizeStreamElements } from '../lib/tts'
 import { renderComposition, videoMeta } from '../lib/video'
@@ -54,6 +55,7 @@ import {
   type TextAnimationPreset,
 } from '../lib/textLayers'
 import { getFilterById, applyFilter as applyFilterFn, type FilterPreset } from '../lib/filters'
+import { applyLUT3D, type LUT3D } from '../lib/lutGenerator'
 
 const SAMPLE_SCRIPT = 'This is how you go viral. Post daily. Study the trends. Never stop testing. And always — always — keep the captions popping.'
 
@@ -101,6 +103,11 @@ export function Editor() {
   // Filter state
   const [activeFilterId, setActiveFilterId] = useState<string | null>(null)
   const [filterStrength, setFilterStrength] = useState(1)
+
+  // LUT state
+  const [activeLutId, setActiveLutId] = useState<string | null>(null)
+  const [activeLut, setActiveLut] = useState<LUT3D | null>(null)
+  const [lutStrength, setLutStrength] = useState(1)
 
   // Animation state
   const [clipAnimationIn, setClipAnimationIn] = useState<AnimationConfig>({ type: 'none', duration: 0.5 })
@@ -256,6 +263,11 @@ export function Editor() {
               applyFilterFn(ctx, w, h, filter, filterStrength)
             }
           }
+
+          // Apply LUT if active
+          if (activeLut) {
+            applyLUT3D(ctx, w, h, activeLut, lutStrength)
+          }
         } else {
           // Fallback: single video + captions
           ctx.fillStyle = '#000'
@@ -270,6 +282,15 @@ export function Editor() {
             const t = video.currentTime
             setTime((prev) => (Math.abs(prev - t) > 0.04 ? t : prev))
             if (words.length && project.captionStyle) drawCaptions(ctx, words, getStyle(project.captionStyle), t, w, h)
+            // Apply filter if active
+            if (activeFilterId) {
+              const filter = getFilterById(activeFilterId)
+              if (filter) applyFilterFn(ctx, w, h, filter, filterStrength)
+            }
+            // Apply LUT if active
+            if (activeLut) {
+              applyLUT3D(ctx, w, h, activeLut, lutStrength)
+            }
           }
         }
       }
@@ -277,7 +298,7 @@ export function Editor() {
     }
     rafRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [project?.videoUrl, words, project?.captionStyle, res, timeline, time, videoSources, duration, previewEditStyle, previewColorSkin, platform])
+  }, [project?.videoUrl, words, project?.captionStyle, res, timeline, time, videoSources, duration, previewEditStyle, previewColorSkin, platform, activeLut, lutStrength, activeFilterId, filterStrength])
 
   const togglePlay = () => {
     const v = videoRef.current
@@ -384,7 +405,18 @@ export function Editor() {
         outW: outDims.w, outH: outDims.h,
         bitrate: 8_000_000,
         audioLayers: project.voiceoverUrl ? [{ url: project.voiceoverUrl, gain: 1 }] : [],
-        draw: (ctx, t, w, h) => drawFrame({ ctx, time: t, w, h }),
+        draw: (ctx, t, w, h) => {
+          drawFrame({ ctx, time: t, w, h })
+          // Apply filter if active
+          if (activeFilterId) {
+            const filter = getFilterById(activeFilterId)
+            if (filter) applyFilterFn(ctx, w, h, filter, filterStrength)
+          }
+          // Apply LUT if active
+          if (activeLut) {
+            applyLUT3D(ctx, w, h, activeLut, lutStrength)
+          }
+        },
         onProgress: setProgress,
       })
       downloadBlob(blob, `${(project.name || 'clip').replace(/\s+/g, '-')}_final.webm`)
@@ -439,6 +471,7 @@ export function Editor() {
           { id: 'captions', label: 'Captions', icon: <Captions size={13} /> },
           { id: 'voice', label: 'Voice', icon: <Mic size={13} /> },
           { id: 'style', label: 'Style', icon: <Palette size={13} /> },
+          { id: 'lut', label: 'LUT', icon: <Wand2 size={13} /> },
           { id: 'color', label: 'Color', icon: <Sliders size={13} /> },
           { id: 'effects', label: 'Effects', icon: <Sparkles size={13} /> },
           { id: 'keyframe', label: 'Keyframe', icon: <Layers size={13} /> },
@@ -557,6 +590,21 @@ export function Editor() {
                 onStrengthChange={setFilterStrength}
               />
             </div>
+          </div>
+        )}
+
+        {/* ── LUT Tab ──────────────────────────────────── */}
+        {tab === 'lut' && (
+          <div className="space-y-3">
+            <LutPicker
+              activeLutId={activeLutId}
+              lutStrength={lutStrength}
+              onLutSelect={(id, lut) => {
+                setActiveLutId(id)
+                setActiveLut(lut ?? null)
+              }}
+              onStrengthChange={setLutStrength}
+            />
           </div>
         )}
 
