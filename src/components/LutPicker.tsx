@@ -346,7 +346,7 @@ function loadImage(file: File): Promise<HTMLImageElement> {
     return Promise.reject(new Error('Image too large (max 20 MB)'))
   }
   return new Promise((resolve, reject) => {
-    const img = new Image()
+    const img = document.createElement('img')
     const url = URL.createObjectURL(file)
     img.onload = () => {
       // Guard against decompression bombs
