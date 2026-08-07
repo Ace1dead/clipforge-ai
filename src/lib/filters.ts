@@ -339,6 +339,7 @@ export function applyFilter(
   filter: FilterPreset,
   strength: number = 1,
 ): void {
+  if (strength <= 0) return
   const imageData = ctx.getImageData(0, 0, w, h)
   const data = imageData.data
 

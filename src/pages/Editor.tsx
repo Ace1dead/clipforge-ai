@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import {
@@ -226,6 +226,31 @@ export function Editor() {
     setTimeline(tl)
   }, [project?.videoUrl, duration])
 
+  // ── Memoized compositor draw frame ───────────────────────────────
+  const hasClips = timeline.tracks.some(t => t.clips.length > 0)
+
+  const timelineDrawFrame = useMemo(() => {
+    if (!hasClips) return null
+    return createTimelineDrawFrame({
+      clipDuration: duration,
+      words,
+      captionStyleId: project?.captionStyle ?? 'pop-classic',
+      editStyle: previewEditStyle,
+      colorSkin: previewColorSkin,
+      hooks: [],
+      platform,
+      fadeDuration: 0.5,
+      hookDuration: 3,
+      timeline,
+      videoSources,
+    })
+  }, [duration, words, project?.captionStyle, previewEditStyle, previewColorSkin, platform, timeline, videoSources, hasClips])
+
+  // Cache filter lookup (avoid re-searching every frame)
+  const cachedFilter = useMemo(() => {
+    return activeFilterId ? getFilterById(activeFilterId) : null
+  }, [activeFilterId])
+
   // ── Sync video playback with timeline ────────────────────────────
   useEffect(() => {
     if (!project?.videoUrl) return
@@ -237,31 +262,12 @@ export function Editor() {
         const w = canvas.width
         const h = canvas.height
 
-        // Use timeline compositor if timeline has clips
-        const hasClips = timeline.tracks.some(t => t.clips.length > 0)
+        if (hasClips && timelineDrawFrame) {
+          timelineDrawFrame({ ctx, time, w, h, video: video ?? undefined })
 
-        if (hasClips) {
-          const drawFrame = createTimelineDrawFrame({
-            clipDuration: duration,
-            words,
-            captionStyleId: project.captionStyle ?? 'pop-classic',
-            editStyle: previewEditStyle,
-            colorSkin: previewColorSkin,
-            hooks: [],
-            platform,
-            fadeDuration: 0.5,
-            hookDuration: 3,
-            timeline,
-            videoSources,
-          })
-          drawFrame({ ctx, time, w, h, video: video ?? undefined })
-
-          // Apply filter if active
-          if (activeFilterId) {
-            const filter = getFilterById(activeFilterId)
-            if (filter) {
-              applyFilterFn(ctx, w, h, filter, filterStrength)
-            }
+          // Apply filter if active (cached lookup)
+          if (cachedFilter) {
+            applyFilterFn(ctx, w, h, cachedFilter, filterStrength)
           }
 
           // Apply LUT if active
@@ -282,10 +288,9 @@ export function Editor() {
             const t = video.currentTime
             setTime((prev) => (Math.abs(prev - t) > 0.04 ? t : prev))
             if (words.length && project.captionStyle) drawCaptions(ctx, words, getStyle(project.captionStyle), t, w, h)
-            // Apply filter if active
-            if (activeFilterId) {
-              const filter = getFilterById(activeFilterId)
-              if (filter) applyFilterFn(ctx, w, h, filter, filterStrength)
+            // Apply filter if active (cached lookup)
+            if (cachedFilter) {
+              applyFilterFn(ctx, w, h, cachedFilter, filterStrength)
             }
             // Apply LUT if active
             if (activeLut) {
@@ -298,7 +303,7 @@ export function Editor() {
     }
     rafRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [project?.videoUrl, words, project?.captionStyle, res, timeline, time, videoSources, duration, previewEditStyle, previewColorSkin, platform, activeLut, lutStrength, activeFilterId, filterStrength])
+  }, [project?.videoUrl, words, project?.captionStyle, res, time, duration, project?.captionStyle, timelineDrawFrame, cachedFilter, filterStrength, activeLut, lutStrength, hasClips])
 
   const togglePlay = () => {
     const v = videoRef.current
