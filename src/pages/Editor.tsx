@@ -252,26 +252,34 @@ export function Editor() {
   }, [activeFilterId])
 
   // ── Sync video playback with timeline ────────────────────────────
+  // Use a ref for time inside the rAF to avoid re-creating the effect every frame
+  const timeRef = useRef(time)
+  timeRef.current = time
+
   useEffect(() => {
     if (!project?.videoUrl) return
+    let running = true
+
     const loop = () => {
+      if (!running) return
       const canvas = canvasRef.current
       const video = videoRef.current
       const ctx = canvas?.getContext('2d')
       if (canvas && ctx) {
         const w = canvas.width
         const h = canvas.height
+        const t = timeRef.current
 
         if (hasClips && timelineDrawFrame) {
-          timelineDrawFrame({ ctx, time, w, h, video: video ?? undefined })
+          timelineDrawFrame({ ctx, time: t, w, h, video: video ?? undefined })
 
           // Apply filter if active (cached lookup)
-          if (cachedFilter) {
+          if (cachedFilter && filterStrength > 0) {
             applyFilterFn(ctx, w, h, cachedFilter, filterStrength)
           }
 
           // Apply LUT if active
-          if (activeLut) {
+          if (activeLut && lutStrength > 0) {
             applyLUT3D(ctx, w, h, activeLut, lutStrength)
           }
         } else {
@@ -285,15 +293,15 @@ export function Editor() {
             const dw = vw * scale
             const dh = vh * scale
             ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh)
-            const t = video.currentTime
-            setTime((prev) => (Math.abs(prev - t) > 0.04 ? t : prev))
-            if (words.length && project.captionStyle) drawCaptions(ctx, words, getStyle(project.captionStyle), t, w, h)
+            const vt = video.currentTime
+            setTime((prev) => (Math.abs(prev - vt) > 0.04 ? vt : prev))
+            if (words.length && project.captionStyle) drawCaptions(ctx, words, getStyle(project.captionStyle), vt, w, h)
             // Apply filter if active (cached lookup)
-            if (cachedFilter) {
+            if (cachedFilter && filterStrength > 0) {
               applyFilterFn(ctx, w, h, cachedFilter, filterStrength)
             }
             // Apply LUT if active
-            if (activeLut) {
+            if (activeLut && lutStrength > 0) {
               applyLUT3D(ctx, w, h, activeLut, lutStrength)
             }
           }
@@ -302,8 +310,8 @@ export function Editor() {
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [project?.videoUrl, words, project?.captionStyle, res, time, duration, project?.captionStyle, timelineDrawFrame, cachedFilter, filterStrength, activeLut, lutStrength, hasClips])
+    return () => { running = false; cancelAnimationFrame(rafRef.current) }
+  }, [project?.videoUrl, words, project?.captionStyle, res, duration, timelineDrawFrame, cachedFilter, filterStrength, activeLut, lutStrength, hasClips])
 
   const togglePlay = () => {
     const v = videoRef.current
