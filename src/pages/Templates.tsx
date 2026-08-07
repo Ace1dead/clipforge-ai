@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, Play, Download, Clock, Zap, Film, Type, Mic, Layers, Wand2, Search, Filter } from 'lucide-react'
-import { Button, Card, Badge, toast, Input } from '../components/ui'
+import { Sparkles, Play, Download, Clock, Zap, Film, Type, Mic, Layers, Wand2, Search, Filter, Palette } from 'lucide-react'
+import { Button, Card, Badge, toast, Input, Select, Field } from '../components/ui'
 import { ALL_VIRAL_PRESETS, type ViralPreset, type ViralCategory } from '../lib/viralPresets'
 import { getPresetSummaries, autoSuggestPreset } from '../lib/templateEngine'
+import { createBrandKitWithPreset, type BrandKit } from '../lib/brandKit'
 
 const CATEGORY_FILTERS: Array<{ id: string; label: string }> = [
   { id: 'all', label: 'All Templates' },
@@ -63,6 +64,8 @@ export function Templates() {
   const [category, setCategory] = useState('all')
   const [selected, setSelected] = useState<ViralPreset | null>(null)
   const [search, setSearch] = useState('')
+  const [brandKit, setBrandKit] = useState<BrandKit | null>(null)
+  const [showBrandKit, setShowBrandKit] = useState(false)
 
   const filtered = useMemo(() => {
     let presets = ALL_VIRAL_PRESETS
@@ -100,6 +103,9 @@ export function Templates() {
       overlays: preset.overlays,
     }
     localStorage.setItem('cf_template_config', JSON.stringify(templateConfig))
+    if (brandKit) {
+      localStorage.setItem('cf_brand_kit', JSON.stringify(brandKit))
+    }
     toast('info', `Template "${preset.name}" applied — upload a video in the Editor`)
     navigate('/editor')
   }
@@ -144,6 +150,70 @@ export function Templates() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Brand Kit Section */}
+      <div className="mt-6">
+        <button
+          onClick={() => setShowBrandKit(!showBrandKit)}
+          className="flex items-center gap-2 text-[13px] text-muted hover:text-fg transition-colors cursor-pointer"
+        >
+          <Palette size={14} className="text-accent" />
+          <span className="font-medium">Brand Kit</span>
+          <Badge tone="neutral" className="text-[10px]">{brandKit ? 'Active' : 'Optional'}</Badge>
+          <span className="text-[11px] text-faint">{showBrandKit ? '▲' : '▼'}</span>
+        </button>
+        {showBrandKit && (
+          <Card className="p-4 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <Field label="Preset">
+                <Select
+                  value={brandKit?.name ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (!val) { setBrandKit(null); return }
+                    const kit = createBrandKitWithPreset(val, val.toLowerCase() as any)
+                    setBrandKit(kit)
+                    toast('info', `Brand kit "${val}" applied to templates`)
+                  }}
+                >
+                  <option value="">No brand kit</option>
+                  <option value="Corporate">Corporate</option>
+                  <option value="Creative">Creative</option>
+                  <option value="Minimal">Minimal</option>
+                  <option value="Bold">Bold</option>
+                  <option value="Neon">Neon</option>
+                </Select>
+              </Field>
+              {brandKit && (
+                <>
+                  <div>
+                    <p className="text-[11px] text-faint mb-1.5">Colors</p>
+                    <div className="flex gap-1.5">
+                      {Object.entries(brandKit.colors).map(([key, color]) => (
+                        <div key={key} className="flex flex-col items-center gap-0.5">
+                          <div className="w-6 h-6 rounded border border-white/20" style={{ backgroundColor: color }} />
+                          <span className="text-[8px] text-faint">{key.slice(0, 3)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-faint mb-1.5">Fonts</p>
+                    <div className="space-y-0.5 text-[11px]">
+                      <p><span className="text-faint">Heading:</span> {brandKit.fonts.heading}</p>
+                      <p><span className="text-faint">Body:</span> {brandKit.fonts.body}</p>
+                      <p><span className="text-faint">Accent:</span> {brandKit.fonts.accent}</p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            {brandKit && (
+              <p className="text-[10px] text-faint mt-2">Brand colors and fonts will be applied to exported clips.</p>
+            )}
+          </Card>
+        )}
       </div>
 
       {/* Templates Grid */}
