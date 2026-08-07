@@ -74,7 +74,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Typewriter',
     description: 'Characters appear one by one',
-    icon: '⌨',
+    icon: 'TW',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'typewriter',
@@ -91,7 +91,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Pop In',
     description: 'Scale from 0 with bounce',
-    icon: '💥',
+    icon: 'PI',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'pop',
@@ -112,7 +112,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Slide Up',
     description: 'Rises from below with fade',
-    icon: '⬆',
+    icon: 'SU',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'slide-up',
@@ -133,7 +133,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Slide Down',
     description: 'Drops in from above',
-    icon: '⬇',
+    icon: 'SD',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'slide-down',
@@ -154,7 +154,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Glitch Text',
     description: 'RGB split glitch entrance',
-    icon: '⚡',
+    icon: 'GT',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'glitch',
@@ -171,7 +171,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Bounce',
     description: 'Bouncy entrance with overshoot',
-    icon: '🏀',
+    icon: 'BN',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'bounce',
@@ -192,7 +192,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Spin In',
     description: 'Rotates in from 360°',
-    icon: '🔄',
+    icon: 'SI',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'spin',
@@ -213,7 +213,7 @@ export const TEXT_ANIMATIONS: TextAnimationPreset[] = [
   {
     name: 'Wave',
     description: 'Per-character wave animation',
-    icon: '🌊',
+    icon: 'WV',
     apply: (cfg, dur) => ({
       ...cfg,
       animation: 'wave',

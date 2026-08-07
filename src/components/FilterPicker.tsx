@@ -17,7 +17,7 @@ import {
   type FilterPreset,
   type CustomFilter,
 } from '../lib/filters'
-import { Plus, Trash2, RotateCcw, Check } from 'lucide-react'
+import { Plus, Trash2, RotateCcw, Check, Pencil, X } from 'lucide-react'
 
 interface FilterPickerProps {
   activeFilterId?: string | null
@@ -330,9 +330,9 @@ export default function FilterPicker({
                       setEditingFilter(filter as CustomFilter)
                       setShowCreator(true)
                     }}
-                    className="w-3.5 h-3.5 bg-gray-600 rounded text-[7px] text-white hover:bg-gray-500"
+                    className="w-3.5 h-3.5 bg-gray-600 rounded text-[7px] text-white hover:bg-gray-500 flex items-center justify-center"
                   >
-                    ✎
+                    <Pencil size={8} />
                   </button>
                   <button
                     onClick={(e) => {
@@ -340,9 +340,9 @@ export default function FilterPicker({
                       deleteCustomFilter(filter.id)
                       if (activeFilterId === filter.id) onFilterSelect(null)
                     }}
-                    className="w-3.5 h-3.5 bg-red-600 rounded text-[7px] text-white hover:bg-red-500"
+                    className="w-3.5 h-3.5 bg-red-600 rounded text-[7px] text-white hover:bg-red-500 flex items-center justify-center"
                   >
-                    ×
+                    <X size={8} />
                   </button>
                 </div>
               )}

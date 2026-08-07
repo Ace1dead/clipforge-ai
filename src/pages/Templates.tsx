@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, Play, Download, Clock, Zap, Film, Type, Mic, Layers, Wand2, Search, Filter, Palette } from 'lucide-react'
+import { Sparkles, Play, Download, Clock, Zap, Film, Type, Mic, Layers, Wand2, Search, Filter, Palette, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button, Card, Badge, toast, Input, Select, Field } from '../components/ui'
 import { ALL_VIRAL_PRESETS, type ViralPreset, type ViralCategory } from '../lib/viralPresets'
 import { getPresetSummaries, autoSuggestPreset } from '../lib/templateEngine'
@@ -161,7 +161,7 @@ export function Templates() {
           <Palette size={14} className="text-accent" />
           <span className="font-medium">Brand Kit</span>
           <Badge tone="neutral" className="text-[10px]">{brandKit ? 'Active' : 'Optional'}</Badge>
-          <span className="text-[11px] text-faint">{showBrandKit ? '▲' : '▼'}</span>
+          <span className="text-[11px] text-faint">{showBrandKit ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</span>
         </button>
         {showBrandKit && (
           <Card className="p-4 mt-3">

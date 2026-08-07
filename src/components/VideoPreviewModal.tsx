@@ -5,7 +5,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX, Share2, ExternalLink, Copy, Check, FileDown } from 'lucide-react'
+import { X, Play, Pause, SkipBack, SkipForward, Download, Loader2, Volume2, VolumeX, Share2, ExternalLink, Copy, Check, FileDown, Music, Camera, PlayCircle, Link, AtSign } from 'lucide-react'
 import { Button, Select, Field, Slider, Badge, ProgressBar, Textarea, toast } from './ui'
 import { createDrawFrame, renderPreviewFrame, type CompositorConfig } from '../lib/compositor'
 import { EDIT_STYLES, type EditStyleId, type ColorSkinId } from '../lib/editStyles'
@@ -17,12 +17,20 @@ import { generatePremiereXML, generateDaVinciXML, generateFCPXML, type TimelineC
 import type { TimedWord } from '../lib/tts'
 
 const PLATFORMS = [
-  { id: 'tiktok', name: 'TikTok', icon: '♪', color: '#ff0050' },
-  { id: 'instagram', name: 'Instagram Reels', icon: '◎', color: '#e1306c' },
-  { id: 'youtube', name: 'YouTube Shorts', icon: '▶', color: '#ff0000' },
-  { id: 'linkedin', name: 'LinkedIn', icon: 'in', color: '#0a66c2' },
-  { id: 'x', name: 'X (Twitter)', icon: '𝕏', color: '#ffffff' },
+  { id: 'tiktok', name: 'TikTok', color: '#ff0050' },
+  { id: 'instagram', name: 'Instagram Reels', color: '#e1306c' },
+  { id: 'youtube', name: 'YouTube Shorts', color: '#ff0000' },
+  { id: 'linkedin', name: 'LinkedIn', color: '#0a66c2' },
+  { id: 'x', name: 'X (Twitter)', color: '#ffffff' },
 ] as const
+
+const PLATFORM_ICONS: Record<string, React.ReactNode> = {
+  tiktok: <Music size={14} />,
+  instagram: <Camera size={14} />,
+  youtube: <PlayCircle size={14} />,
+  linkedin: <Link size={14} />,
+  x: <AtSign size={14} />,
+}
 
 interface Props {
   open: boolean
@@ -347,7 +355,7 @@ export function VideoPreviewModal({
                           : 'bg-white/5 text-faint hover:bg-white/10'
                       }`}
                     >
-                      <span className="text-[14px]" style={{ color: selectedPlatform === p.id ? p.color : undefined }}>{p.icon}</span>
+                      <span className="text-[14px]" style={{ color: selectedPlatform === p.id ? p.color : undefined }}>{PLATFORM_ICONS[p.id]}</span>
                       <span>{p.name.split(' ')[0]}</span>
                     </button>
                   ))}

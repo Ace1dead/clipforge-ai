@@ -69,7 +69,7 @@ export function Dashboard() {
     <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 anim-float-up">
       <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Welcome back, {user.display_name.split(' ')[0]} 👋</h1>
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Welcome back, {user.display_name.split(' ')[0]}</h1>
           <p className="text-muted text-[14px] mt-1.5">Your viral clip studio — {user.plan} plan · {user.credits} credits left</p>
         </div>
         <Link to="/editor"><Button size="lg" icon={<Zap size={17} />}>Create new clip</Button></Link>

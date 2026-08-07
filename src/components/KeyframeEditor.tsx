@@ -6,6 +6,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import type { KeyframedLayer, Keyframe, AnimatedProperty, InterpolationType } from '../lib/keyframe'
 import { createKeyframe, removeKeyframe, ANIMATION_PRESETS } from '../lib/keyframe'
+import { Crosshair, X } from 'lucide-react'
 
 interface KeyframeEditorProps {
   layer: KeyframedLayer
@@ -364,7 +365,7 @@ export default function KeyframeEditor({
                     className="text-[10px] text-gray-400 hover:text-white"
                     title="Go to time"
                   >
-                    ◎
+                    <Crosshair size={12} />
                   </button>
                   <button
                     onClick={(e) => {
@@ -374,7 +375,7 @@ export default function KeyframeEditor({
                     className="text-[10px] text-gray-400 hover:text-red-400"
                     title="Remove keyframe"
                   >
-                    ×
+                    <X size={12} />
                   </button>
                 </div>
               ))}

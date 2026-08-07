@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import {
   Play, Pause, Upload, Captions, Mic, Palette, Clapperboard, Download, Save, SkipBack, SkipForward,
-  Volume2, Type, Sparkles, Wand2, Loader2, ArrowLeft, X, Globe, Scissors, Layers, Sliders,
+  Volume2, Type, Sparkles, Wand2, Loader2, ArrowLeft, X, Globe, Scissors, Layers, Sliders, Check, Plus,
 } from 'lucide-react'
 import { Button, Card, Tabs, Textarea, Select, Field, Slider, ProgressBar, Badge, toast } from '../components/ui'
 import { MediaDropzone } from '../components/MediaDropzone'
@@ -1063,7 +1063,7 @@ export function Editor() {
                           : { type: 'crossfade', duration: 0.5 }
                       })}
                     >
-                      {selectedClip.transitionIn ? '✓ In' : '+ In'}
+                      {selectedClip.transitionIn ? <><Check size={11} /> In</> : <><Plus size={11} /> In</>}
                     </Button>
                     <Button size="sm" variant="secondary" className="flex-1"
                       onClick={() => updateSelectedClip({
@@ -1072,7 +1072,7 @@ export function Editor() {
                           : { type: 'crossfade', duration: 0.5 }
                       })}
                     >
-                      {selectedClip.transitionOut ? '✓ Out' : '+ Out'}
+                      {selectedClip.transitionOut ? <><Check size={11} /> Out</> : <><Plus size={11} /> Out</>}
                     </Button>
                   </div>
                 </div>
